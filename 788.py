@@ -2069,21 +2069,34 @@ if __name__ == "__main__":
     
     # Set webhook during startup
     def register_webhook():
-        """Register webhook with Telegram"""
-        webhook_url = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
+        """Register webhook with Telegram (optional)"""
         try:
+            if not WEBHOOK_URL_BASE or "localhost" in WEBHOOK_URL_BASE:
+                print(f"[*] Webhook URL not set or is localhost - skipping registration")
+                print(f"[*] Bot will listen for Telegram updates on {WEBHOOK_URL_PATH}")
+                return
+            
+            webhook_url = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
             print(f"[*] Setting webhook URL: {webhook_url}")
             bot.set_webhook(url=webhook_url, max_connections=40, allowed_updates=[])
             print(f"[✓] Webhook registered successfully!")
         except Exception as e:
-            print(f"[ERROR] Failed to register webhook: {e}")
+            print(f"[!] Webhook registration failed (continuing anyway): {str(e)[:100]}")
+            print(f"[*] Bot will still listen for updates on {WEBHOOK_URL_PATH}")
     
     # Get app URL from environment or use default
     import os
     PORT = int(os.getenv('PORT', 8080))
-    WEBHOOK_URL_BASE = os.getenv('WEBHOOK_URL', f'https://hammerhead-app-h8gb9g9s.ondigitalocean.app')
+    WEBHOOK_URL_BASE = os.getenv('WEBHOOK_URL', '')  # Leave empty if not set
     
-    print(f"[*] Webhook URL Base: {WEBHOOK_URL_BASE}")
+    if not WEBHOOK_URL_BASE:
+        print(f"[!] WEBHOOK_URL not set in environment")
+        print(f"[*] Bot will listen on port {PORT} but webhook registration will be skipped")
+        print(f"[*] To enable webhooks, set WEBHOOK_URL env var in Digital Ocean")
+        print(f"[*] Example: https://your-app-url.ondigitalocean.app")
+    else:
+        print(f"[*] Webhook URL Base: {WEBHOOK_URL_BASE}")
+    
     print(f"[*] Running on port {PORT}")
     
     # Register webhook before starting Flask
