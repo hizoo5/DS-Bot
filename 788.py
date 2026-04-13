@@ -1214,16 +1214,43 @@ def send_welcome(message):
     # =================================================================
     # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
     # =================================================================
-    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+    # Rule: User MUST be in ONE of these:
+    # 1. VERIFIED_USERS (went through /key)
+    # 2. AUTHORIZED_USERS list (admin added them)
+    # 3. ADMIN_USER_ID (admin account - but must be set!)
+    
+    is_authorized = False
+    
+    # Check if admin (only if admin_user_id is not 0)
+    if ADMIN_USER_ID != 0 and user_id == ADMIN_USER_ID:
+        is_authorized = True
+        print(f"[✓] Admin user {user_id} ({username}) accessing /start")
+    
+    # Check if in authorized users list
+    elif user_id in AUTHORIZED_USERS:
+        is_authorized = True
+        print(f"[✓] Authorized user {user_id} ({username}) accessing /start")
+    
+    # Check if verified through /key
+    elif user_id in VERIFIED_USERS:
+        is_authorized = True
+        print(f"[✓] Verified user {user_id} ({username}) accessing /start")
+    
+    # NOT AUTHORIZED - BLOCK
+    if not is_authorized:
+        print(f"\n{'='*70}")
+        print(f"[❌ ACCESS BLOCKED] User {user_id} (@{username})")
+        print(f"  Not in any auth list. Sending denial message...")
+        print(f"{'='*70}\n")
+        
         bot.send_message(chat_id, 
             "🔐 <b>❌ ACCESS DENIED</b>\n\n"
-            "You must provide a valid <b>Access Key</b> FIRST.\n\n"
-            "Please use:\n"
-            "<code>/key YOUR_ACCESS_KEY_HERE</code>\n\n"
-            "<i>Without a valid key, you cannot use this bot.</i>\n"
-            "<i>Contact administrator if you don't have a key.</i>",
+            "This bot requires authentication.\n\n"
+            "<b>New users:</b> Use <code>/register YOUR_KEY</code>\n"
+            "<b>Check your ID:</b> Use <code>/myid</code>\n\n"
+            "<i>You need a valid access key to use this bot.</i>",
             parse_mode="HTML")
-        print(f"[BLOCKED] Unauthorized user {user_id} ({username}) attempted /start")
+        print(f"[BLOCKED] Unauthorized user {user_id} (@{username}) tried /start - ACCESS DENIED")
         return
     
     # User is authorized, proceed
@@ -1262,7 +1289,6 @@ def send_welcome(message):
         try:
             msg = bot.send_message(chat_id, text, reply_markup=get_menu_markup(), parse_mode="HTML")
             user_state[chat_id]["menu_msg_id"] = msg.message_id
-            print(f"[✓] User {user_id} ({username}) accessed /start - AUTHORIZED")
             break
         except Exception as e:
             print(f"[*] Telegram send_message retry {retry_attempt + 1}/3: {str(e)[:50]}")
@@ -1496,10 +1522,142 @@ def recovery_status(message):
     safe_send_message(chat_id, text, parse_mode="HTML")
 
 
+@bot.message_handler(commands=['myid'])
+def show_my_id(message):
+    """Show user's Telegram ID - NO AUTH REQUIRED"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    username = message.from_user.username or "No username"
+    
+    bot.send_message(chat_id,
+        f"🆔 <b>Your Telegram Information:</b>\n\n"
+        f"<b>User ID:</b> <code>{user_id}</code>\n"
+        f"<b>Username:</b> @{username}\n\n"
+        f"<i>Your User ID is needed to set you up as admin.</i>\n"
+        f"<i>Give this ID to the administrator.</i>",
+        parse_mode="HTML")
+    print(f"[INFO] User {user_id} ({username}) checked their ID")
+
+
+@bot.message_handler(commands=['verify'])
+def verify_existing_user(message):
+    """Let existing users verify if they have accounts in database - NO KEY NEEDED"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{user_id}"
+    
+    # Check if user already verified
+    if user_id in VERIFIED_USERS:
+        bot.send_message(chat_id, 
+            "✅ <b>Already Verified!</b>\n\n"
+            "You're already verified. Use /start to access the bot.",
+            parse_mode="HTML")
+        return
+    
+    # Check if user has accounts in database (existing user)
+    user_accounts = db.get_user_accounts(user_id)
+    
+    if not user_accounts:
+        bot.send_message(chat_id, 
+            "❌ <b>No Accounts Found</b>\n\n"
+            "You don't have any accounts in the system yet.\n\n"
+            "To get access:\n"
+            "<code>/register YOUR_ACCESS_KEY</code>",
+            parse_mode="HTML")
+        print(f"[INFO] User {user_id} ({username}) tried /verify but has no accounts")
+        return
+    
+    # User has accounts - verify them
+    add_verified_user(user_id)
+    
+    bot.send_message(chat_id, 
+        "✅ <b>Verified!</b>\n\n"
+        f"Welcome back! You have <b>{len(user_accounts)} accounts</b> in the system.\n\n"
+        "Type <code>/start</code> to access your accounts.",
+        parse_mode="HTML")
+    print(f"[✓] User {user_id} ({username}) verified via /verify - {len(user_accounts)} accounts found")
+
+
+@bot.message_handler(commands=['register'])
+def register_user(message):
+    """Let new users register with an access key - NO PRIOR AUTH REQUIRED"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{user_id}"
+    
+    # Extract key from message
+    try:
+        provided_key = message.text.split()[1].upper()
+    except:
+        bot.send_message(chat_id, 
+            "❌ <b>Invalid Format</b>\n\n"
+            "Usage: <code>/register YOUR_ACCESS_KEY</code>\n\n"
+            "<i>Example: /register KEY_USR_001A5B</i>",
+            parse_mode="HTML")
+        return
+    
+    # Load access keys
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+    except:
+        bot.send_message(chat_id, "❌ <b>Error</b>\n\nFailed to load access keys.", parse_mode="HTML")
+        return
+    
+    # Check if key exists and is not used
+    if provided_key not in keys:
+        bot.send_message(chat_id, 
+            "❌ <b>Invalid Key</b>\n\n"
+            "The key you provided doesn't exist.\n"
+            "Please check and try again.",
+            parse_mode="HTML")
+        print(f"[BLOCKED] Invalid key attempt by {user_id}: {provided_key}")
+        return
+    
+    key_data = keys[provided_key]
+    if key_data.get("user_id") is not None:
+        bot.send_message(chat_id, 
+            "❌ <b>Key Already Used</b>\n\n"
+            "This key has already been claimed by another user.\n\n"
+            "<i>One key = One user only.</i>\n"
+            "Please use a different key.",
+            parse_mode="HTML")
+        print(f"[BLOCKED] Reused key attempt by {user_id}: {provided_key}")
+        return
+    
+    # Register user with this key
+    access_config["access_keys"][provided_key]["user_id"] = user_id
+    access_config["access_keys"][provided_key]["used"] = True
+    
+    try:
+        with open("access_keys.json", 'w') as f:
+            json.dump(access_config, f, indent=2)
+        
+        # CRITICAL: Add to verified users - this enables access
+        add_verified_user(user_id)
+        
+        db.add_user(user_id, username, is_authorized=True)
+        
+        bot.send_message(chat_id, 
+            "✅ <b>Access Granted!</b>\n\n"
+            f"Welcome, @{username}!\n\n"
+            "Your account has been activated.\n"
+            "Type <code>/start</code> to begin.",
+            parse_mode="HTML")
+        
+        print(f"[✓] User {user_id} (@{username}) registered with key {provided_key}")
+    except Exception as e:
+        bot.send_message(chat_id, 
+            f"❌ <b>Registration Failed</b>\n\n"
+            f"Error: {str(e)[:100]}", 
+            parse_mode="HTML")
+        print(f"[ERROR] Failed to register user: {str(e)}")
+
 
 @bot.message_handler(commands=['key'])
 def verify_access_key(message):
-    """Verify access key and register user"""
+    """Verify access key and register user - LEGACY (use /register instead)"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     username = message.from_user.username or f"user_{user_id}"
@@ -1571,7 +1729,19 @@ def handle_callback(call):
     # =================================================================
     # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
     # =================================================================
-    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+    is_authorized = False
+    
+    # Check if admin (only if admin_user_id is not 0)
+    if ADMIN_USER_ID != 0 and user_id == ADMIN_USER_ID:
+        is_authorized = True
+    # Check if in authorized users list
+    elif user_id in AUTHORIZED_USERS:
+        is_authorized = True
+    # Check if verified through /key
+    elif user_id in VERIFIED_USERS:
+        is_authorized = True
+    
+    if not is_authorized:
         bot.answer_callback_query(call.id, 
             "❌ ACCESS DENIED\n\nYou must provide an access key with /key", 
             show_alert=True)
@@ -1761,9 +1931,9 @@ def handle_callback(call):
     # Handle account detail callbacks
     elif call.data.startswith("detail_"):
         account_id = int(call.data.split("_")[1])
-        user_id = call.message.chat.id
+        user_id = call.from_user.id  # FIXED: Use from_user.id, not chat.id!
         
-        # Get account details from database
+        # Get account details from database - filtered by user_id for privacy
         account = db.get_account_detail(user_id, account_id)
         
         if account:
@@ -1778,7 +1948,8 @@ def handle_callback(call):
             
             safe_edit_message(chat_id, call.message.message_id, text, parse_mode="HTML")
         else:
-            bot.answer_callback_query(call.id, "Account not found", show_alert=True)
+            bot.answer_callback_query(call.id, "Account not found or access denied", show_alert=True)
+            print(f"[SECURITY] User {user_id} tried to access account {account_id} - NOT FOUND or denied")
 
 
 def process_inv_count(message):
@@ -1789,7 +1960,19 @@ def process_inv_count(message):
     # =================================================================
     # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
     # =================================================================
-    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+    is_authorized = False
+    
+    # Check if admin (only if admin_user_id is not 0)
+    if ADMIN_USER_ID != 0 and user_id == ADMIN_USER_ID:
+        is_authorized = True
+    # Check if in authorized users list
+    elif user_id in AUTHORIZED_USERS:
+        is_authorized = True
+    # Check if verified through /key
+    elif user_id in VERIFIED_USERS:
+        is_authorized = True
+    
+    if not is_authorized:
         bot.send_message(chat_id, "❌ <b>ACCESS DENIED</b>\n\nYou must provide an access key with /key first.", parse_mode="HTML")
         return
     
@@ -1838,7 +2021,19 @@ def process_ref_link(message):
     # =================================================================
     # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
     # =================================================================
-    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+    is_authorized = False
+    
+    # Check if admin (only if admin_user_id is not 0)
+    if ADMIN_USER_ID != 0 and user_id == ADMIN_USER_ID:
+        is_authorized = True
+    # Check if in authorized users list
+    elif user_id in AUTHORIZED_USERS:
+        is_authorized = True
+    # Check if verified through /key
+    elif user_id in VERIFIED_USERS:
+        is_authorized = True
+    
+    if not is_authorized:
         bot.send_message(chat_id, "❌ <b>ACCESS DENIED</b>\n\nYou must provide an access key with /key first.", parse_mode="HTML")
         return
     
