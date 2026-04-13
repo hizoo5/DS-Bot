@@ -1242,6 +1242,50 @@ def show_backup(message):
     
     safe_send_message(chat_id, summary, parse_mode="HTML")
 
+@bot.message_handler(commands=['debug'])
+def debug_database(message):
+    """Show database statistics (admin command)"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    # Only admin can use this
+    if user_id != ADMIN_USER_ID:
+        bot.send_message(chat_id, "❌ Admin only command", parse_mode="HTML")
+        return
+    
+    try:
+        # Get all accounts grouped by user and mode
+        all_accs = db.connection.execute("""
+            SELECT user_id, mode, COUNT(*) as count 
+            FROM accounts 
+            GROUP BY user_id, mode 
+            ORDER BY user_id
+        """).fetchall()
+        
+        # Get total count
+        total = db.connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        
+        debug_msg = f"🔧 <b>DATABASE DEBUG INFO</b>\n"
+        debug_msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        debug_msg += f"📊 Total Accounts: {total}\n"
+        debug_msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        if all_accs:
+            debug_msg += "<b>BY USER:</b>\n"
+            for user_id_db, mode, count in all_accs:
+                mode_icon = "👤" if mode == "MAIN" else "👥"
+                debug_msg += f"{mode_icon} User {user_id_db}: {count} {mode}\n"
+        else:
+            debug_msg += "📭 No accounts in database\n"
+        
+        # Show verified users count
+        verified_count = len(VERIFIED_USERS)
+        debug_msg += f"\n🔐 Verified Users: {verified_count}\n"
+        
+        bot.send_message(chat_id, debug_msg, parse_mode="HTML")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ Error: {str(e)[:100]}", parse_mode="HTML")
+
 @bot.message_handler(commands=['export'])
 def export_backup(message):
     """Export current user's accounts as formatted text"""
@@ -1715,7 +1759,10 @@ def handle_callback(call):
             
             mode = state.get("mode", "MAIN")
             
-            print(f"[*] Attempting account creation for entry {state['current']}...")
+            # Calculate which account number this is
+            mode_label = "MAIN" if mode == "MAIN" else f"DUMMY {state['current']}"
+            
+            print(f"[*] Attempting account creation: {mode_label} ({state['current']}/{state['count']})...")
             
             result = registration_bot.execute_full_workflow(mode=mode, recommender_id=state.get("ref_code", ""))
             
@@ -1766,13 +1813,17 @@ def handle_callback(call):
                 
                 # Show successful results so far if any
                 if state["results"]:
-                    summary = f"🔴 <b>{state['current']}TH {mode} FAILED TO REGISTER!</b>\n\n"
+                    summary = f"🔴 <b>{mode_label} FAILED TO REGISTER!</b>\n\n"
                     summary += f"<b>REGISTERED ACCOUNTS:</b>\n\n"
                     
                     for idx, res in enumerate(state["results"], 1):
-                        label = f"MAIN:" if res.get('mode') == 'MAIN' else f"{mode} {idx}:"
+                        if res.get('mode') == 'MAIN':
+                            acc_label = f"MAIN:"
+                        else:
+                            acc_label = f"DUMMY {idx}:"
+                        
                         summary += (
-                            f"<b>{label}</b>\n"
+                            f"<b>{acc_label}</b>\n"
                             f"📱 Number: <code>{res['username']}</code>\n"
                             f"🔑 Password: <code>{res['password']}</code>\n"
                             f"🌐 IP: <code>{res['ip']}</code>\n"
@@ -1793,13 +1844,17 @@ def handle_callback(call):
             
             # Show successful results so far if any
             if state["results"]:
-                summary = f"🔴 <b>{state['current']}TH {mode} FAILED TO REGISTER!</b>\n\n"
+                summary = f"🔴 <b>{mode_label} FAILED TO REGISTER!</b>\n\n"
                 summary += f"<b>REGISTERED ACCOUNTS:</b>\n\n"
                 
                 for idx, res in enumerate(state["results"], 1):
-                    label = f"MAIN:" if res.get('mode') == 'MAIN' else f"{mode} {idx}:"
+                    if res.get('mode') == 'MAIN':
+                        acc_label = f"MAIN:"
+                    else:
+                        acc_label = f"DUMMY {idx}:"
+                    
                     summary += (
-                        f"<b>{label}</b>\n"
+                        f"<b>{acc_label}</b>\n"
                         f"📱 Number: <code>{res['username']}</code>\n"
                         f"🔑 Password: <code>{res['password']}</code>\n"
                         f"🌐 IP: <code>{res['ip']}</code>\n"
