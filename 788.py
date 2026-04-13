@@ -21,9 +21,135 @@ import urllib3
 import sqlite3
 from queue import Queue
 import hashlib
+import os
 
 # Suppress SSL warnings globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ==========================================
+# BACKUP SYSTEM FOR PERSISTENT STORAGE
+# ==========================================
+BACKUP_DIR = "account_backups"
+BACKUP_FILE = os.path.join(BACKUP_DIR, "accounts_backup.json")
+
+def ensure_backup_dir():
+    """Create backup directory if it doesn't exist"""
+    if not os.path.exists(BACKUP_DIR):
+        os.makedirs(BACKUP_DIR)
+        print(f"[✓] Created backup directory: {BACKUP_DIR}")
+
+def load_backup_data():
+    """Load all backed up accounts from JSON file"""
+    ensure_backup_dir()
+    if os.path.exists(BACKUP_FILE):
+        try:
+            with open(BACKUP_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {"accounts": [], "last_updated": ""}
+    return {"accounts": [], "last_updated": ""}
+
+def save_account_to_backup(account_data):
+    """Save account to backup file immediately after successful registration"""
+    ensure_backup_dir()
+    try:
+        backup = load_backup_data()
+        
+        # Add timestamp and sequential ID
+        account_data["id"] = len(backup["accounts"]) + 1
+        account_data["registered_at"] = datetime.now().isoformat()
+        
+        backup["accounts"].append(account_data)
+        backup["last_updated"] = datetime.now().isoformat()
+        
+        # Write to file
+        with open(BACKUP_FILE, 'w', encoding='utf-8') as f:
+            json.dump(backup, f, indent=2, ensure_ascii=False)
+        
+        print(f"[✓] Account backed up: {account_data['username']}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to backup account: {str(e)[:50]}")
+        return False
+
+def get_backup_summary():
+    """Get summary of all backed up accounts with proper formatting"""
+    backup = load_backup_data()
+    accounts = backup.get("accounts", [])
+    
+    if not accounts:
+        return "📭 No accounts in backup yet."
+    
+    total = len(accounts)
+    main_count = len([a for a in accounts if a.get("mode") == "MAIN"])
+    dummy_count = len([a for a in accounts if a.get("mode") == "DUMMY"])
+    
+    summary = f"📊 <b>BACKUP SUMMARY</b>\n"
+    summary += f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    summary += f"📊 Total Accounts: {total}\n"
+    summary += f"👤 MAIN: {main_count}\n"
+    summary += f"👥 DUMMY: {dummy_count}\n"
+    summary += f"🕐 Last Updated: {backup.get('last_updated', 'Never')}\n"
+    summary += f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Group by batches
+    batches = {}
+    for acc in accounts:
+        batch = acc.get("batch_name", "unknown")
+        if batch not in batches:
+            batches[batch] = []
+        batches[batch].append(acc)
+    
+    summary += "<b>Recent Accounts:</b>\n"
+    for acc in accounts[-10:]:  # Show last 10
+        summary += f"#{acc['id']} 📱 <code>{acc['username']}</code> ({acc['mode']})\n"
+    
+    return summary
+
+def export_accounts_to_text():
+    """Export all accounts to readable text format"""
+    backup = load_backup_data()
+    accounts = backup.get("accounts", [])
+    
+    if not accounts:
+        return "No accounts in backup."
+    
+    text = "=" * 80 + "\n"
+    text += "ACCOUNT BACKUP - FULL EXPORT\n"
+    text += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    text += "=" * 80 + "\n\n"
+    
+    main_accs = [a for a in accounts if a.get("mode") == "MAIN"]
+    dummy_accs = [a for a in accounts if a.get("mode") == "DUMMY"]
+    
+    # MAIN Accounts
+    text += f"MAIN ACCOUNTS ({len(main_accs)} total)\n"
+    text += "-" * 80 + "\n"
+    for i, acc in enumerate(main_accs, 1):
+        text += f"\n#{i} MAIN\n"
+        text += f"  Username    : {acc.get('username', 'N/A')}\n"
+        text += f"  Password    : {acc.get('password', 'N/A')}\n"
+        text += f"  User ID     : {acc.get('invite_link', 'N/A').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'}\n"
+        text += f"  IP Address  : {acc.get('ip', 'N/A')}\n"
+        text += f"  Invite Link : {acc.get('invite_link', 'N/A')}\n"
+        text += f"  Registered  : {acc.get('registered_at', 'N/A')}\n"
+    
+    # DUMMY Accounts
+    text += f"\n\nDUMMY ACCOUNTS ({len(dummy_accs)} total)\n"
+    text += "-" * 80 + "\n"
+    for i, acc in enumerate(dummy_accs, 1):
+        text += f"\n#{i} DUMMY (Referral from MAIN)\n"
+        text += f"  Username       : {acc.get('username', 'N/A')}\n"
+        text += f"  Password       : {acc.get('password', 'N/A')}\n"
+        text += f"  User ID        : {acc.get('invite_link', 'N/A').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'}\n"
+        text += f"  IP Address     : {acc.get('ip', 'N/A')}\n"
+        text += f"  Invite Link    : {acc.get('invite_link', 'N/A')}\n"
+        text += f"  Deposit Ch 1   : {acc.get('deposit_channel_1', 'N/A')[:80]}...\n" if acc.get('deposit_channel_1') else f"  Deposit Ch 1   : N/A\n"
+        text += f"  Deposit Ch 2   : {acc.get('deposit_channel_2', 'N/A')[:80]}...\n" if acc.get('deposit_channel_2') else f"  Deposit Ch 2   : N/A\n"
+        text += f"  Registered     : {acc.get('registered_at', 'N/A')}\n"
+    
+    text += "\n" + "=" * 80 + "\n"
+    return text
 
 # ==========================================
 # OPTIMIZATION: CONCURRENT USER MANAGEMENT
@@ -980,7 +1106,13 @@ def send_welcome(message):
         "🌐 IP Addresses: ✅ ON\n"
         "📱 PH Mobile   : ✅ ON\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Tap a button to change settings."
+        "Tap a button to change settings.\n\n"
+        "<b>📁 BACKUP COMMANDS:</b>\n"
+        "<i>/all_accounts - Show all (MAIN+DUMMY)\n"
+        "/latest_main - Latest 5 MAIN only\n"
+        "/account_detail - Full credentials\n"
+        "/recovery_status - Backup file info\n"
+        "/export - Download as text file</i>"
     )
     
     # Retry logic for Telegram API
@@ -995,6 +1127,172 @@ def send_welcome(message):
                 time.sleep(1)
             else:
                 print(f"[ERROR] Failed to send welcome message after 3 retries")
+
+@bot.message_handler(commands=['backup'])
+def show_backup(message):
+    """Show summary of all backed up accounts"""
+    chat_id = message.chat.id
+    summary = get_backup_summary()
+    safe_send_message(chat_id, summary, parse_mode="HTML")
+
+@bot.message_handler(commands=['export'])
+def export_backup(message):
+    """Export all accounts to text file and send"""
+    chat_id = message.chat.id
+    
+    ensure_backup_dir()
+    export_text = export_accounts_to_text()
+    export_file = os.path.join(BACKUP_DIR, f"accounts_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    
+    try:
+        with open(export_file, 'w', encoding='utf-8') as f:
+            f.write(export_text)
+        
+        with open(export_file, 'rb') as f:
+            bot.send_document(chat_id, f, caption="📄 Full Account Export")
+        
+        print(f"[✓] Exported accounts to {export_file}")
+    except Exception as e:
+        safe_send_message(chat_id, f"❌ Export failed: {str(e)[:100]}", parse_mode="HTML")
+        print(f"[ERROR] Export failed: {str(e)}")
+
+@bot.message_handler(commands=['latest_main'])
+def show_latest_main(message):
+    """Show latest 5 MAIN accounts only"""
+    chat_id = message.chat.id
+    backup = load_backup_data()
+    accounts = backup.get("accounts", [])
+    
+    main_accounts = [a for a in accounts if a.get("mode") == "MAIN"]
+    
+    if not main_accounts:
+        safe_send_message(chat_id, "📭 No MAIN accounts in backup yet.", parse_mode="HTML")
+        return
+    
+    # Get latest 5
+    latest_5 = main_accounts[-5:]
+    
+    text = "📋 <b>LATEST 5 MAIN ACCOUNTS</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    for idx, acc in enumerate(latest_5, 1):
+        user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
+        text += f"<b>#{idx}</b>\n"
+        text += f"📱 <code>{acc['username']}</code>\n"
+        text += f"🔑 <code>{acc['password']}</code>\n"
+        text += f"🆔 User ID: <code>{user_id}</code>\n"
+        text += f"🌐 <code>{acc['ip']}</code>\n"
+        text += f"🔗 <code>{acc['invite_link']}</code>\n\n"
+    
+    safe_send_message(chat_id, text, parse_mode="HTML")
+
+@bot.message_handler(commands=['all_accounts'])
+def show_all_accounts(message):
+    """Show ALL accounts (MAIN + DUMMY) from backup"""
+    chat_id = message.chat.id
+    backup = load_backup_data()
+    accounts = backup.get("accounts", [])
+    
+    if not accounts:
+        safe_send_message(chat_id, "📭 No accounts in backup yet.", parse_mode="HTML")
+        return
+    
+    main_accounts = [a for a in accounts if a.get("mode") == "MAIN"]
+    dummy_accounts = [a for a in accounts if a.get("mode") == "DUMMY"]
+    
+    text = "📊 <b>ALL BACKED UP ACCOUNTS</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    text += f"👤 MAIN: {len(main_accounts)}\n"
+    text += f"👥 DUMMY: {len(dummy_accounts)}\n"
+    text += f"📊 Total: {len(accounts)}\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Show all MAIN accounts
+    if main_accounts:
+        text += "<b>🔴 MAIN ACCOUNTS:</b>\n"
+        for idx, acc in enumerate(main_accounts, 1):
+            user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
+            text += f"{idx}. 📱 <code>{acc['username']}</code> | 🆔 {user_id}\n"
+        text += "\n"
+    
+    # Show all DUMMY accounts
+    if dummy_accounts:
+        text += "<b>🔵 DUMMY ACCOUNTS (Referrals):</b>\n"
+        for idx, acc in enumerate(dummy_accounts, 1):
+            user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
+            text += f"{idx}. 📱 <code>{acc['username']}</code> | 🆔 {user_id}\n"
+    
+    safe_send_message(chat_id, text, parse_mode="HTML")
+
+@bot.message_handler(commands=['account_detail'])
+def show_account_detail(message):
+    """Show DETAILED view of all accounts with credentials"""
+    chat_id = message.chat.id
+    backup = load_backup_data()
+    accounts = backup.get("accounts", [])
+    
+    if not accounts:
+        safe_send_message(chat_id, "📭 No accounts in backup yet.", parse_mode="HTML")
+        return
+    
+    # Split into chunks to avoid message size limits
+    chunk_size = 3
+    for i in range(0, len(accounts), chunk_size):
+        chunk = accounts[i:i+chunk_size]
+        text = f"<b>📄 ACCOUNT DETAILS ({i+1}-{min(i+chunk_size, len(accounts))} of {len(accounts)})</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        for acc in chunk:
+            mode = acc.get('mode', 'UNKNOWN')
+            user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
+            reg_time = acc.get('registered_at', 'N/A')[:10] if acc.get('registered_at') else 'N/A'
+            
+            text += f"<b>🆔 ID: {acc['id']} | {mode}</b>\n"
+            text += f"📱 Username: <code>{acc['username']}</code>\n"
+            text += f"🔑 Password: <code>{acc['password']}</code>\n"
+            text += f"👤 User ID: <code>{user_id}</code>\n"
+            text += f"🌐 IP: <code>{acc['ip']}</code>\n"
+            text += f"📅 Registered: {reg_time}\n"
+            text += f"🔗 Link: <code>{acc.get('invite_link', 'N/A')}</code>\n"
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        safe_send_message(chat_id, text, parse_mode="HTML")
+
+@bot.message_handler(commands=['recovery_status'])
+def recovery_status(message):
+    """Show backup recovery status and file info"""
+    chat_id = message.chat.id
+    backup = load_backup_data()
+    accounts = backup.get("accounts", [])
+    
+    text = "🔧 <b>BACKUP RECOVERY STATUS</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if os.path.exists(BACKUP_FILE):
+        file_size = os.path.getsize(BACKUP_FILE) / 1024  # KB
+        text += f"✅ Backup File: EXISTS\n"
+        text += f"📁 Path: <code>{BACKUP_FILE}</code>\n"
+        text += f"💾 Size: {file_size:.2f} KB\n"
+        text += f"📊 Total Accounts: {len(accounts)}\n"
+        text += f"👤 MAIN: {len([a for a in accounts if a.get('mode') == 'MAIN'])}\n"
+        text += f"👥 DUMMY: {len([a for a in accounts if a.get('mode') == 'DUMMY'])}\n"
+        
+        if accounts:
+            last_acc = accounts[-1]
+            registered = last_acc.get('registered_at', 'N/A')
+            text += f"🕐 Last Backup: {registered}\n"
+    else:
+        text += f"❌ Backup File: NOT FOUND\n"
+        text += f"📁 Expected Path: <code>{BACKUP_FILE}</code>\n"
+    
+    text += "\n<b>Available Commands:</b>\n"
+    text += "• /all_accounts - List all accounts\n"
+    text += "• /latest_main - Latest 5 MAIN only\n"
+    text += "• /account_detail - Full details\n"
+    text += "• /export - Download as file\n"
+    
+    safe_send_message(chat_id, text, parse_mode="HTML")
+
 
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -1065,6 +1363,19 @@ def handle_callback(call):
             if result and result["success"]:
                 state["results"].append(result)
                 
+                # BACKUP: Save account to persistent storage IMMEDIATELY
+                backup_data = {
+                    "batch_name": state["batch_name"],
+                    "mode": mode,
+                    "username": result['username'],
+                    "password": result['password'],
+                    "ip": result['ip'],
+                    "invite_link": result.get('invite_link', ''),
+                    "deposit_channel_1": result.get('deposit_channel_1', ''),
+                    "deposit_channel_2": result.get('deposit_channel_2', ''),
+                }
+                save_account_to_backup(backup_data)
+                
                 # Format output based on mode
                 if mode == "MAIN":
                     output = (
@@ -1072,7 +1383,8 @@ def handle_callback(call):
                         f"📱 <b>Number</b>   : <code>{result['username']}</code>\n"
                         f"🔑 <b>Password</b>  : <code>{result['password']}</code>\n"
                         f"🌐 <b>IP Address</b> : <code>{result['ip']}</code>\n"
-                        f"🔗 <b>Invite Link</b> : <code>{result.get('invite_link', 'N/A')}</code>"
+                        f"🔗 <b>Invite Link</b> : <code>{result.get('invite_link', 'N/A')}</code>\n"
+                        f"💾 <b>Status</b>    : Backed up ✓"
                     )
                 else:  # DUMMY mode
                     output = (
@@ -1082,7 +1394,8 @@ def handle_callback(call):
                         f"🌐 <b>IP Address</b> : <code>{result['ip']}</code>\n"
                         f"🔗 <b>Invite Link</b> : <code>{result.get('invite_link', 'N/A')}</code>\n"
                         f"💳 <b>D-Link C1</b>  : <code>{result.get('deposit_channel_1', 'N/A')}</code>\n"
-                        f"💳 <b>D-Link C2</b>  : <code>{result.get('deposit_channel_2', 'N/A')}</code>"
+                        f"💳 <b>D-Link C2</b>  : <code>{result.get('deposit_channel_2', 'N/A')}</code>\n"
+                        f"💾 <b>Status</b>    : Backed up ✓"
                     )
                 
                 safe_edit_message(
@@ -1157,6 +1470,9 @@ def handle_callback(call):
                     )
                 
                 summary += "\n"
+            
+            summary += "💾 <b>All accounts have been backed up safely!</b>\n"
+            summary += "Use /backup or /export to retrieve them anytime."
             
             safe_send_message(chat_id, summary, parse_mode="HTML")
         else:
@@ -1286,6 +1602,11 @@ def refresh_menu(chat_id):
 
 if __name__ == "__main__":
     print("[*] Starting Telegram Bot C2 Server...")
+    
+    # Initialize backup system
+    ensure_backup_dir()
+    backup = load_backup_data()
+    print(f"[✓] Backup system initialized. Current accounts in backup: {len(backup.get('accounts', []))}")
     
     while True:
         try:
