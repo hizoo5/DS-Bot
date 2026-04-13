@@ -1,0 +1,118 @@
+{
+  "proxies": {
+    "BICOLREGION": [
+      "smart-Ayong22_area-PH_state-BICOLREGION:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-BICOLREGION:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-BICOLREGION:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-BICOLREGION:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-BICOLREGION:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "CAGAYANVALLEY": [
+      "smart-Ayong22_area-PH_state-CAGAYANVALLEY:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-CAGAYANVALLEY:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-CAGAYANVALLEY:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-CAGAYANVALLEY:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-CAGAYANVALLEY:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "CALABARZON": [
+      "smart-Ayong22_area-PH_state-CALABARZON:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-CALABARZON:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-CALABARZON:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-CALABARZON:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-CALABARZON:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "CARAGA": [
+      "smart-Ayong22_area-PH_state-CARAGA:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-CARAGA:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-CARAGA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-CARAGA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-CARAGA:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "CENTRALLUZON": [
+      "smart-Ayong22_area-PH_state-CENTRALLUZON:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-CENTRALLUZON:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-CENTRALLUZON:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-CENTRALLUZON:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-CENTRALLUZON:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "CENTRALVISAYAS": [
+      "smart-Ayong22_area-PH_state-CENTRALVISAYAS:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-CENTRALVISAYAS:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-CENTRALVISAYAS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-CENTRALVISAYAS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-CENTRALVISAYAS:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "CORDILLERA": [
+      "smart-Ayong22_area-PH_state-CORDILLERA:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-CORDILLERA:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-CORDILLERA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-CORDILLERA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-CORDILLERA:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "DAVAOREGION": [
+      "smart-Ayong22_area-PH_state-DAVAOREGION:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-DAVAOREGION:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-DAVAOREGION:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-DAVAOREGION:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-DAVAOREGION:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "EASTERNVISAYAS": [
+      "smart-Ayong22_area-PH_state-EASTERNVISAYAS:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-EASTERNVISAYAS:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-EASTERNVISAYAS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-EASTERNVISAYAS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-EASTERNVISAYAS:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "ILOCOS": [
+      "smart-Ayong22_area-PH_state-ILOCOS:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-ILOCOS:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-ILOCOS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-ILOCOS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-ILOCOS:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "MIMAROPA": [
+      "smart-Ayong22_area-PH_state-MIMAROPA:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-MIMAROPA:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-MIMAROPA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-MIMAROPA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-MIMAROPA:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "NATIONALCAPITALREGION": [
+      "smart-Ayong22_area-PH_state-NATIONALCAPITALREGION:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-NATIONALCAPITALREGION:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-NATIONALCAPITALREGION:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-NATIONALCAPITALREGION:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-NATIONALCAPITALREGION:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "NORTHERNMINDANAO": [
+      "smart-Ayong22_area-PH_state-NORTHERNMINDANAO:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-NORTHERNMINDANAO:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-NORTHERNMINDANAO:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-NORTHERNMINDANAO:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-NORTHERNMINDANAO:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "SOCCSKSARGEN": [
+      "smart-Ayong22_area-PH_state-SOCCSKSARGEN:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-SOCCSKSARGEN:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-SOCCSKSARGEN:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-SOCCSKSARGEN:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-SOCCSKSARGEN:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "WESTERNVISAYAS": [
+      "smart-Ayong22_area-PH_state-WESTERNVISAYAS:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-WESTERNVISAYAS:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-WESTERNVISAYAS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-WESTERNVISAYAS:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-WESTERNVISAYAS:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ],
+    "ZAMBOANGAPENINSULA": [
+      "smart-Ayong22_area-PH_state-ZAMBOANGAPENINSULA:Ayongpale12@as.smartproxy.net:3120",
+      "smart-Hesuyasu_area-PH_state-ZAMBOANGAPENINSULA:Hesusayu11@as.smartproxy.net:3120",
+      "smart-doriano_area-PH_state-ZAMBOANGAPENINSULA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-Samir03_area-PH_state-ZAMBOANGAPENINSULA:Samiraraah23@as.smartproxy.net:3120",
+      "smart-s9mf8o8tpkmb_area-PH_state-ZAMBOANGAPENINSULA:ToX5OB8bMGaN3vpu@as.smartproxy.net:3120"
+    ]
+  },
+  "current_region_index": 0,
+  "current_proxy_index": 0
+}

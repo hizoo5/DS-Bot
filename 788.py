@@ -1053,30 +1053,44 @@ X_CLIENT_VERSION = "v234"
 # ==========================================
 # PROXY ROTATION POOL (Multiple sub-accounts)
 # ==========================================
-PROXY_POOL = [
-    {"username": "smart-Hesuyasu_area-PH_state-AUTONOMOUSREGIONINMUSLIMMINDANAO", "password": "Hesusayu11"},
-    {"username": "smart-Ayong22_area-PH_state-BICOLREGION", "password": "Ayongpale12"},
-    {"username": "smart-doriano_area-PH_state-CAGAYANVALLEY", "password": "Samiraraah23"},
-    {"username": "smart-Samir03_area-PH_state-CENTRALVISAYAS", "password": "Samiraraah23"},
-    {"username": "smart-Samir03_area-PH_state-CORDILLERA", "password": "Samiraraah23"},
-    {"username": "smart-s9mf8o8tpkmb_area-PH_state-DAVAOREGION", "password": "ToX5OB8bMGaN3vpu"},
-    {"username": "smart-Hesuyasu_area-PH_state-EASTERNVISAYAS", "password": "Hesusayu11"},
-    {"username": "smart-Ayong22_area-PH_state-ILOCOREGION", "password": "Ayongpale12"},
-    {"username": "smart-doriano_area-PH_state-CALABARZON", "password": "Samiraraah23"},
-    {"username": "smart-Samir03_area-PH_state-MIMAROPA", "password": "Samiraraah23"},
-    {"username": "smart-s9mf8o8tpkmb_area-PH_state-NORTHERNMINDANAO", "password": "ToX5OB8bMGaN3vpu"},
-]
+def load_proxy_pool():
+    """Load proxy pool from proxy_config.json"""
+    try:
+        with open("proxy_config.json", 'r') as f:
+            config = json.load(f)
+            all_proxies = []
+            # Flatten all regions into a single list for rotation
+            for region, proxies in config.get("proxies", {}).items():
+                for proxy_url in proxies:
+                    all_proxies.append({
+                        "url": f"http://{proxy_url}",
+                        "region": region
+                    })
+            print(f"[✓] Loaded {len(all_proxies)} proxies from {len(config['proxies'])} regions")
+            return all_proxies
+    except Exception as e:
+        print(f"[ERROR] Failed to load proxy config: {str(e)}")
+        # Fallback proxy list
+        return []
+
+PROXY_POOL = load_proxy_pool()
 
 # Proxy rotation counter
 proxy_rotation_index = 0
 
 def get_next_proxy() -> str:
-    """Get next proxy from pool and rotate"""
+    """Get next proxy from pool and rotate through all regions"""
     global proxy_rotation_index
-    proxy_cred = PROXY_POOL[proxy_rotation_index % len(PROXY_POOL)]
-    proxy_url = f"http://{proxy_cred['username']}:{proxy_cred['password']}@proxy.smartproxy.net:3120"
+    if not PROXY_POOL:
+        print("[ERROR] No proxies loaded!")
+        return None
+    
+    proxy = PROXY_POOL[proxy_rotation_index % len(PROXY_POOL)]
+    proxy_url = proxy['url']
+    region = proxy['region']
     proxy_rotation_index += 1
-    print(f"[DEBUG] Using proxy #{proxy_rotation_index % len(PROXY_POOL)}: {proxy_cred['username'][:40]}...")
+    
+    print(f"[DEBUG] Using proxy #{proxy_rotation_index % len(PROXY_POOL)}: {region}")
     return proxy_url
 
 # Cache Turnstile token for reuse across multiple accounts
@@ -1151,13 +1165,33 @@ def send_welcome(message):
     user_id = message.from_user.id
     username = message.from_user.username or f"user_{user_id}"
     
-    # Check authorization
-    if not check_authorization(user_id):
-        bot.send_message(chat_id, "❌ <b>Access Denied</b>\n\nYou are not authorized to use this bot.", parse_mode="HTML")
-        print(f"[BLOCKED] Unauthorized user {user_id} ({username}) tried to access")
+    # Load access keys
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+    except:
+        keys = {}
+    
+    # Check if user is already registered via key
+    user_registered = False
+    for key, key_data in keys.items():
+        if key_data.get("user_id") == user_id:
+            user_registered = True
+            break
+    
+    # If not registered, ask for access key
+    if not user_registered:
+        msg = bot.send_message(chat_id, 
+            "🔐 <b>Welcome!</b>\n\n"
+            "This bot requires an <b>Access Key</b> to use.\n\n"
+            "Please send your access key to continue:\n\n"
+            "<code>/key YOUR_ACCESS_KEY_HERE</code>",
+            parse_mode="HTML")
+        print(f"[*] New user {user_id} ({username}) needs to provide access key")
         return
     
-    # Add user to database
+    # User is registered, continue with bot setup
     db.add_user(user_id, username, is_authorized=True)
     
     user_state[chat_id] = {
@@ -1182,9 +1216,9 @@ def send_welcome(message):
         "Tap a button to change settings.\n\n"
         "<b>📁 BACKUP COMMANDS:</b>\n"
         "<i>/all_accounts - Show all (MAIN+DUMMY)\n"
-        "/latest_main - Latest 5 MAIN only\n"
+        "/main - All MAIN accounts\n"
         "/account_detail - Full credentials\n"
-        "/recovery_status - Backup file info\n"
+        "/backup - Backup summary\n"
         "/export - Download as text file</i>"
     )
     
@@ -1452,6 +1486,64 @@ def recovery_status(message):
     
     safe_send_message(chat_id, text, parse_mode="HTML")
 
+
+
+@bot.message_handler(commands=['key'])
+def verify_access_key(message):
+    """Verify access key and register user"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{user_id}"
+    
+    # Extract key from message
+    try:
+        provided_key = message.text.split()[1].upper()
+    except:
+        bot.send_message(chat_id, "❌ <b>Invalid Format</b>\n\nUsage: /key YOUR_ACCESS_KEY", parse_mode="HTML")
+        return
+    
+    # Load access keys
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+    except:
+        bot.send_message(chat_id, "❌ <b>Error</b>\n\nFailed to load access keys.", parse_mode="HTML")
+        return
+    
+    # Check if key exists and is not used
+    if provided_key not in keys:
+        bot.send_message(chat_id, "❌ <b>Invalid Key</b>\n\nThe key you provided doesn't exist.", parse_mode="HTML")
+        print(f"[BLOCKED] Invalid key attempt by {user_id}: {provided_key}")
+        return
+    
+    key_data = keys[provided_key]
+    if key_data.get("user_id") is not None:
+        bot.send_message(chat_id, "❌ <b>Key Already Used</b>\n\nThis key has already been assigned to another user.\n\nOne key = One user only.", parse_mode="HTML")
+        print(f"[BLOCKED] Reused key attempt by {user_id}: {provided_key}")
+        return
+    
+    # Register user with this key
+    access_config["access_keys"][provided_key]["user_id"] = user_id
+    access_config["access_keys"][provided_key]["used"] = True
+    
+    try:
+        with open("access_keys.json", 'w') as f:
+            json.dump(access_config, f, indent=2)
+        
+        db.add_user(user_id, username, is_authorized=True)
+        
+        bot.send_message(chat_id, 
+            "✅ <b>Access Granted!</b>\n\n"
+            f"Welcome, {username}!\n\n"
+            "Your account has been activated.\n"
+            "Type /start to begin.",
+            parse_mode="HTML")
+        
+        print(f"[✓] User {user_id} ({username}) registered with key {provided_key}")
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ <b>Registration Failed</b>\n\nError: {str(e)[:100]}", parse_mode="HTML")
+        print(f"[ERROR] Failed to register user: {str(e)}")
 
 
 @bot.callback_query_handler(func=lambda call: True)
