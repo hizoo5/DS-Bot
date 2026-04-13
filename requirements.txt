@@ -1,5 +1,5 @@
 requests==2.31.0
-ddddocr==1.4.7
+ddddocr==1.6.1
 capsolver==1.4.1
 pyTelegramBotAPI==4.14.0
 pycryptodome==3.19.0
