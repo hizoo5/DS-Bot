@@ -1,1 +1,1 @@
-python 788g.py
+web: python 788.py
