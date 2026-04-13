@@ -45,10 +45,27 @@ def load_authorized_users():
 AUTHORIZED_USERS, ADMIN_USER_ID = load_authorized_users()
 
 def check_authorization(user_id: int) -> bool:
-    """Check if user is authorized"""
+    """Check if user is authorized via access key or authorized_users list"""
+    # Check if admin
     if user_id == ADMIN_USER_ID:
         return True
-    return user_id in AUTHORIZED_USERS
+    
+    # Check if in authorized_users list
+    if user_id in AUTHORIZED_USERS:
+        return True
+    
+    # Check if user has registered with an access key
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+            for key, key_data in keys.items():
+                if key_data.get("user_id") == user_id and key_data.get("used"):
+                    return True
+    except:
+        pass
+    
+    return False
 
 # ==========================================
 # BACKUP SYSTEM FOR PERSISTENT STORAGE
@@ -1165,30 +1182,16 @@ def send_welcome(message):
     user_id = message.from_user.id
     username = message.from_user.username or f"user_{user_id}"
     
-    # Load access keys
-    try:
-        with open("access_keys.json", 'r') as f:
-            access_config = json.load(f)
-            keys = access_config.get("access_keys", {})
-    except:
-        keys = {}
-    
-    # Check if user is already registered via key
-    user_registered = False
-    for key, key_data in keys.items():
-        if key_data.get("user_id") == user_id:
-            user_registered = True
-            break
-    
-    # If not registered, ask for access key
-    if not user_registered:
-        msg = bot.send_message(chat_id, 
-            "🔐 <b>Welcome!</b>\n\n"
+    # STRICT AUTHORIZATION CHECK - user MUST have a valid access key first
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, 
+            "🔐 <b>Access Denied!</b>\n\n"
             "This bot requires an <b>Access Key</b> to use.\n\n"
-            "Please send your access key to continue:\n\n"
-            "<code>/key YOUR_ACCESS_KEY_HERE</code>",
+            "Please provide your access key:\n\n"
+            "<code>/key YOUR_ACCESS_KEY_HERE</code>\n\n"
+            "<i>If you do not have a key, contact administrator.</i>",
             parse_mode="HTML")
-        print(f"[*] New user {user_id} ({username}) needs to provide access key")
+        print(f"[BLOCKED] Unauthorized user {user_id} ({username}) tried to access /start")
         return
     
     # User is registered, continue with bot setup
@@ -1415,74 +1418,47 @@ def show_account_detail(message):
         safe_send_message(chat_id, "📭 No accounts to show.", parse_mode="HTML")
         return
     
-    # Create buttons for account selection
+    # Create buttons for account selection - ONLY user's own accounts
     markup = InlineKeyboardMarkup()
     for idx, acc in enumerate(all_accounts[:10], 1):  # Show first 10
         btn_text = f"{idx}. {acc['username']} ({acc['mode']})"
         markup.add(InlineKeyboardButton(btn_text, callback_data=f"detail_{acc['id']}"))
     
-    safe_send_message(chat_id, "📱 <b>Select account to view details:</b>", reply_markup=markup, parse_mode="HTML")
-    accounts = backup.get("accounts", [])
-    
-    if not accounts:
-        safe_send_message(chat_id, "📭 No accounts in backup yet.", parse_mode="HTML")
-        return
-    
-    # Split into chunks to avoid message size limits
-    chunk_size = 3
-    for i in range(0, len(accounts), chunk_size):
-        chunk = accounts[i:i+chunk_size]
-        text = f"<b>📄 ACCOUNT DETAILS ({i+1}-{min(i+chunk_size, len(accounts))} of {len(accounts)})</b>\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        for acc in chunk:
-            mode = acc.get('mode', 'UNKNOWN')
-            user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
-            reg_time = acc.get('registered_at', 'N/A')[:10] if acc.get('registered_at') else 'N/A'
-            
-            text += f"<b>🆔 ID: {acc['id']} | {mode}</b>\n"
-            text += f"📱 Username: <code>{acc['username']}</code>\n"
-            text += f"🔑 Password: <code>{acc['password']}</code>\n"
-            text += f"👤 User ID: <code>{user_id}</code>\n"
-            text += f"🌐 IP: <code>{acc['ip']}</code>\n"
-            text += f"📅 Registered: {reg_time}\n"
-            text += f"🔗 Link: <code>{acc.get('invite_link', 'N/A')}</code>\n"
-            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        safe_send_message(chat_id, text, parse_mode="HTML")
+    safe_send_message(chat_id, f"📱 <b>Your Accounts ({len(all_accounts)} total)</b>\n\nSelect account to view details:", reply_markup=markup, parse_mode="HTML")
 
 @bot.message_handler(commands=['recovery_status'])
 def recovery_status(message):
-    """Show backup recovery status and file info"""
+    """Show backup recovery status for current user - AUTHORIZED ONLY"""
     chat_id = message.chat.id
-    backup = load_backup_data()
-    accounts = backup.get("accounts", [])
+    user_id = message.from_user.id
     
-    text = "🔧 <b>BACKUP RECOVERY STATUS</b>\n"
+    # Verify authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ <b>Access Denied</b>\n\nPlease provide your access key with /key", parse_mode="HTML")
+        print(f"[BLOCKED] Unauthorized user {user_id} tried /recovery_status")
+        return
+    
+    # Get ONLY current user's accounts from database (NOT all system accounts)
+    user_accounts = db.get_user_accounts(user_id)
+    user_counts = db.get_user_account_count(user_id)
+    
+    text = "🔧 <b>YOUR BACKUP STATUS</b>\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += f"👤 MAIN Accounts: {user_counts['main']}\n"
+    text += f"👥 DUMMY Accounts: {user_counts['dummy']}\n"
+    text += f"📊 Total: {user_counts['total']}\n"
     
-    if os.path.exists(BACKUP_FILE):
-        file_size = os.path.getsize(BACKUP_FILE) / 1024  # KB
-        text += f"✅ Backup File: EXISTS\n"
-        text += f"📁 Path: <code>{BACKUP_FILE}</code>\n"
-        text += f"💾 Size: {file_size:.2f} KB\n"
-        text += f"📊 Total Accounts: {len(accounts)}\n"
-        text += f"👤 MAIN: {len([a for a in accounts if a.get('mode') == 'MAIN'])}\n"
-        text += f"👥 DUMMY: {len([a for a in accounts if a.get('mode') == 'DUMMY'])}\n"
-        
-        if accounts:
-            last_acc = accounts[-1]
-            registered = last_acc.get('registered_at', 'N/A')
-            text += f"🕐 Last Backup: {registered}\n"
+    if user_accounts:
+        latest_acc = user_accounts[-1]
+        text += f"🕐 Last Created: {latest_acc.get('created_at', 'N/A')[:10]}\n"
     else:
-        text += f"❌ Backup File: NOT FOUND\n"
-        text += f"📁 Expected Path: <code>{BACKUP_FILE}</code>\n"
+        text += f"📭 No accounts created yet.\n"
     
     text += "\n<b>Available Commands:</b>\n"
-    text += "• /all_accounts - List all accounts\n"
-    text += "• /latest_main - Latest 5 MAIN only\n"
-    text += "• /account_detail - Full details\n"
-    text += "• /export - Download as file\n"
+    text += "• /all_accounts - View all your accounts\n"
+    text += "• /main - View your MAIN accounts\n"
+    text += "• /account_detail - View details\n"
+    text += "• /export - Download file\n"
     
     safe_send_message(chat_id, text, parse_mode="HTML")
 
@@ -1557,25 +1533,7 @@ def handle_callback(call):
         return
     
     # Verify authorization before allowing any action
-    try:
-        with open("access_keys.json", 'r') as f:
-            access_config = json.load(f)
-            keys = access_config.get("access_keys", {})
-    except:
-        keys = {}
-    
-    # Check if user is registered via key
-    user_registered = False
-    for key, key_data in keys.items():
-        if key_data.get("user_id") == user_id:
-            user_registered = True
-            break
-    
-    # If using authorized_users system, also check that
-    if not user_registered:
-        user_registered = check_authorization(user_id)
-    
-    if not user_registered:
+    if not check_authorization(user_id):
         bot.answer_callback_query(call.id, "❌ Access Denied. Please use /key first.", show_alert=True)
         return
 
