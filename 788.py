@@ -202,10 +202,24 @@ class SessionPool:
     def _create_session(self):
         session = requests.Session()
         session.verify = False
-        retry_strategy = Retry(total=2, backoff_factor=0.1, status_forcelist=[429, 500, 502, 503, 504])
-        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+        # Improved retry strategy for SSL and connection errors
+        retry_strategy = Retry(
+            total=5,  # Increased from 2 to 5
+            backoff_factor=1.0,  # Increased from 0.1 (exponential backoff: 1s, 2s, 4s, 8s, 16s)
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST", "PUT", "DELETE"]  # Retry POST
+        )
+        adapter = HTTPAdapter(
+            max_retries=retry_strategy, 
+            pool_connections=20,  # Increased from 10
+            pool_maxsize=20  # Increased from 10
+        )
         session.mount("http://", adapter)
         session.mount("https://", adapter)
+        
+        # Set timeouts and connection parameters
+        session.timeout = 30
+        
         return session
     
     def get(self, timeout=5):
@@ -586,12 +600,22 @@ class RegistrationBot:
                 print(f"[DEBUG] PROXY URL: {self.proxy_url}")
                 print(f"[DEBUG] Session proxies BEFORE request: {self.session.proxies}")
                 
-                res = self.session.post(
-                    f"{self.base_url}/api/frontend/trpc/auth.registe",
-                    headers=headers,
-                    json=registration_payload,
-                    timeout=15
-                )
+                try:
+                    res = self.session.post(
+                        f"{self.base_url}/api/frontend/trpc/auth.registe",
+                        headers=headers,
+                        json=registration_payload,
+                        timeout=20  # Increased timeout
+                    )
+                except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as ssl_error:
+                    # SSL or connection error with proxy - suggest proxy rotation
+                    error_msg = str(ssl_error)
+                    if "SSLZeroReturnError" in error_msg or "Connection" in error_msg:
+                        print(f"[ERROR] SSL/Connection error with proxy (likely rate-limited or banned)")
+                        print(f"[ERROR] Details: {error_msg[:150]}")
+                        if register_attempt < max_register_retries - 1:
+                            print(f"[!] Try rotating to a different proxy (current: {self.proxy_url.split('@')[1] if '@' in self.proxy_url else 'unknown'})")
+                    raise  # Re-raise to trigger retry logic
                 
                 print(f"[DEBUG] Registration Response: {res.status_code}")
                 print(f"[DEBUG] Registration Response Body: {res.text[:500]}")
@@ -1704,6 +1728,8 @@ if __name__ == "__main__":
     backup = load_backup_data()
     print(f"[✓] Backup system initialized. Current accounts in backup: {len(backup.get('accounts', []))}")
     
+    # Connect to Telegram with retry logic
+    max_consecutive_errors = 0
     while True:
         try:
             bot.infinity_polling(timeout=10, long_polling_timeout=10, skip_pending=True)
@@ -1711,7 +1737,27 @@ if __name__ == "__main__":
             print("\n[*] Bot stopped by user")
             break
         except Exception as e:
-            print(f"[ERROR] Bot polling error: {str(e)[:100]}")
-            print("[*] Reconnecting in 5 seconds...")
-            time.sleep(5)
+            error_str = str(e)
+            max_consecutive_errors += 1
+            
+            # Check if it's a 409 conflict error (multiple instances)
+            if "409" in error_str or "Conflict" in error_str:
+                print(f"[ERROR] CRITICAL: Multiple bot instances detected!")
+                print(f"[ERROR] Only one instance can poll at a time. Stopping this instance...")
+                print(f"[ERROR] Details: {error_str[:200]}")
+                break
+            
+            print(f"[ERROR] Bot polling error ({max_consecutive_errors}/5): {error_str[:100]}")
+            
+            # If too many consecutive errors, stop
+            if max_consecutive_errors >= 5:
+                print(f"[ERROR] Too many consecutive errors. Stopping bot.")
+                break
+            
+            # Exponential backoff: 5s, 10s, 15s, 20s, 25s
+            backoff_time = min(5 * max_consecutive_errors, 30)
+            print(f"[*] Reconnecting in {backoff_time} seconds...")
+            time.sleep(backoff_time)
+    
+    print("[*] Bot process ended")
             # Continue loop to retry
