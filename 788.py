@@ -1549,10 +1549,34 @@ def verify_access_key(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     chat_id = call.message.chat.id
+    user_id = call.from_user.id
     state = user_state.get(chat_id)
     
     if not state:
         bot.answer_callback_query(call.id, "Session expired. Type /start")
+        return
+    
+    # Verify authorization before allowing any action
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+    except:
+        keys = {}
+    
+    # Check if user is registered via key
+    user_registered = False
+    for key, key_data in keys.items():
+        if key_data.get("user_id") == user_id:
+            user_registered = True
+            break
+    
+    # If using authorized_users system, also check that
+    if not user_registered:
+        user_registered = check_authorization(user_id)
+    
+    if not user_registered:
+        bot.answer_callback_query(call.id, "❌ Access Denied. Please use /key first.", show_alert=True)
         return
 
     if call.data == "cancel":
@@ -1761,7 +1785,29 @@ def handle_callback(call):
 
 def process_inv_count(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
     state = user_state.get(chat_id)
+    
+    # Verify authorization
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+    except:
+        keys = {}
+    
+    user_registered = False
+    for key, key_data in keys.items():
+        if key_data.get("user_id") == user_id:
+            user_registered = True
+            break
+    
+    if not user_registered:
+        user_registered = check_authorization(user_id)
+    
+    if not user_registered or not state:
+        bot.send_message(chat_id, "❌ Access Denied. Please use /key first.", parse_mode="HTML")
+        return
     
     bot.delete_message(chat_id, message.message_id)
     if state and state.get("prompt_msg_id"):
@@ -1797,8 +1843,30 @@ def process_inv_count(message):
 
 def process_ref_link(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
     state = user_state.get(chat_id)
     link = message.text
+    
+    # Verify authorization
+    try:
+        with open("access_keys.json", 'r') as f:
+            access_config = json.load(f)
+            keys = access_config.get("access_keys", {})
+    except:
+        keys = {}
+    
+    user_registered = False
+    for key, key_data in keys.items():
+        if key_data.get("user_id") == user_id:
+            user_registered = True
+            break
+    
+    if not user_registered:
+        user_registered = check_authorization(user_id)
+    
+    if not user_registered or not state:
+        bot.send_message(chat_id, "❌ Access Denied. Please use /key first.", parse_mode="HTML")
+        return
     
     try:
         bot.delete_message(chat_id, message.message_id)
