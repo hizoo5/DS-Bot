@@ -2067,42 +2067,54 @@ if __name__ == "__main__":
     def health():
         return {"status": "healthy"}, 200
     
-    # Set webhook during startup
+    # Register webhook during startup
     def register_webhook():
         """Register webhook with Telegram (optional)"""
         try:
             if not WEBHOOK_URL_BASE or "localhost" in WEBHOOK_URL_BASE:
-                print(f"[*] Webhook URL not set or is localhost - skipping registration")
-                print(f"[*] Bot will listen for Telegram updates on {WEBHOOK_URL_PATH}")
-                return
+                print(f"[*] Webhook URL not set - using polling fallback")
+                return False
             
             webhook_url = f"{WEBHOOK_URL_BASE}{WEBHOOK_URL_PATH}"
-            print(f"[*] Setting webhook URL: {webhook_url}")
+            print(f"[*] Attempting webhook registration: {webhook_url}")
             bot.set_webhook(url=webhook_url, max_connections=40, allowed_updates=[])
-            print(f"[✓] Webhook registered successfully!")
+            print(f"[✓] Webhook registered successfully! (instant updates)")
+            return True
         except Exception as e:
-            print(f"[!] Webhook registration failed (continuing anyway): {str(e)[:100]}")
-            print(f"[*] Bot will still listen for updates on {WEBHOOK_URL_PATH}")
+            print(f"[!] Webhook registration failed: {str(e)[:80]}")
+            print(f"[*] Falling back to polling mode...")
+            return False
+    
+    # Start polling as a background fallback
+    def start_polling_thread():
+        """Start polling in a background thread"""
+        print("[*] Starting polling listener...")
+        try:
+            bot.infinity_polling(timeout=10, long_polling_timeout=10, skip_pending=True)
+        except Exception as e:
+            print(f"[ERROR] Polling error: {str(e)[:100]}")
     
     # Get app URL from environment or use default
     import os
     PORT = int(os.getenv('PORT', 8080))
-    WEBHOOK_URL_BASE = os.getenv('WEBHOOK_URL', '')  # Leave empty if not set
+    WEBHOOK_URL_BASE = os.getenv('WEBHOOK_URL', '')
     
-    if not WEBHOOK_URL_BASE:
-        print(f"[!] WEBHOOK_URL not set in environment")
-        print(f"[*] Bot will listen on port {PORT} but webhook registration will be skipped")
-        print(f"[*] To enable webhooks, set WEBHOOK_URL env var in Digital Ocean")
-        print(f"[*] Example: https://your-app-url.ondigitalocean.app")
+    if WEBHOOK_URL_BASE:
+        print(f"[*] Webhook URL set to: {WEBHOOK_URL_BASE}")
     else:
-        print(f"[*] Webhook URL Base: {WEBHOOK_URL_BASE}")
+        print(f"[*] No WEBHOOK_URL env var - will use polling")
     
     print(f"[*] Running on port {PORT}")
     
-    # Register webhook before starting Flask
-    register_webhook()
+    # Try to register webhook, but fall back to polling
+    webhook_registered = register_webhook()
     
-    # Start Flask server
+    # Always start polling as backup (it's safe to have both)
+    polling_thread = threading.Thread(target=start_polling_thread, daemon=True)
+    polling_thread.start()
+    print("[✓] System ready - accepting updates via webhook or polling")
+    
+    # Start Flask server (webhook endpoint)
     try:
         app.run(host='0.0.0.0', port=PORT, debug=False, use_reloader=False)
     except KeyboardInterrupt:
