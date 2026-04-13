@@ -1,1 +1,1 @@
-worker: python 788g.py
+python 788g.py
