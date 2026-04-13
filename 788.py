@@ -1203,28 +1203,89 @@ def send_welcome(message):
 
 @bot.message_handler(commands=['backup'])
 def show_backup(message):
-    """Show summary of all backed up accounts"""
+    """Show summary of user's backed up accounts from database"""
     chat_id = message.chat.id
-    summary = get_backup_summary()
+    user_id = message.from_user.id
+    
+    # Check authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ Access Denied", parse_mode="HTML")
+        return
+    
+    # Get user's account counts from database
+    counts = db.get_user_account_count(user_id)
+    
+    summary = f"📊 <b>YOUR BACKUP SUMMARY</b>\n"
+    summary += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    summary += f"👤 MAIN: {counts['main']}\n"
+    summary += f"👥 DUMMY: {counts['dummy']}\n"
+    summary += f"📊 Total: {counts['total']}\n"
+    summary += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if counts['total'] == 0:
+        summary += "📭 No accounts backed up yet.\n"
+    else:
+        summary += "✅ All accounts stored in secure database\n"
+    
+    summary += "\n<b>Available Commands:</b>\n"
+    summary += "• /all_accounts - View all your accounts\n"
+    summary += "• /main - View your MAIN accounts with passwords\n"
+    summary += "• /account_detail - View specific account details\n"
+    summary += "• /export - Download account list\n"
+    
     safe_send_message(chat_id, summary, parse_mode="HTML")
 
 @bot.message_handler(commands=['export'])
 def export_backup(message):
-    """Export all accounts to text file and send"""
+    """Export current user's accounts to text file"""
     chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    # Check authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ Access Denied", parse_mode="HTML")
+        return
+    
+    # Get user's accounts from database
+    all_accounts = db.get_user_accounts(user_id)
+    
+    if not all_accounts:
+        safe_send_message(chat_id, "📭 No accounts to export.", parse_mode="HTML")
+        return
     
     ensure_backup_dir()
-    export_text = export_accounts_to_text()
-    export_file = os.path.join(BACKUP_DIR, f"accounts_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+    export_file = os.path.join(BACKUP_DIR, f"my_accounts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
     
     try:
+        export_text = f"📄 ACCOUNT EXPORT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        export_text += "="*60 + "\n\n"
+        
+        main_accs = [a for a in all_accounts if a['mode'] == 'MAIN']
+        dummy_accs = [a for a in all_accounts if a['mode'] == 'DUMMY']
+        
+        if main_accs:
+            export_text += f"🔴 MAIN ACCOUNTS ({len(main_accs)})\n"
+            export_text += "-"*60 + "\n"
+            for idx, acc in enumerate(main_accs, 1):
+                export_text += f"{idx}. Username: {acc['username']}\n"
+                export_text += f"   Password: {acc['password']}\n"
+                export_text += f"   Created: {acc['created_at']}\n\n"
+        
+        if dummy_accs:
+            export_text += f"\n🔵 DUMMY ACCOUNTS ({len(dummy_accs)})\n"
+            export_text += "-"*60 + "\n"
+            for idx, acc in enumerate(dummy_accs, 1):
+                export_text += f"{idx}. Username: {acc['username']}\n"
+                export_text += f"   Password: {acc['password']}\n"
+                export_text += f"   Created: {acc['created_at']}\n\n"
+        
         with open(export_file, 'w', encoding='utf-8') as f:
             f.write(export_text)
         
         with open(export_file, 'rb') as f:
-            bot.send_document(chat_id, f, caption="📄 Full Account Export")
+            bot.send_document(chat_id, f, caption=f"📄 Your Accounts ({len(all_accounts)} total)")
         
-        print(f"[✓] Exported accounts to {export_file}")
+        print(f"[✓] Exported {len(all_accounts)} accounts for user {user_id}")
     except Exception as e:
         safe_send_message(chat_id, f"❌ Export failed: {str(e)[:100]}", parse_mode="HTML")
         print(f"[ERROR] Export failed: {str(e)}")
