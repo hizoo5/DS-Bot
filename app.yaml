@@ -4,7 +4,6 @@ services:
   github:
     repo: hizoo5/DS-Bot
     branch: main
-  source_dir: DS-Bot
   build_command: pip install -r requirements.txt
   run_command: python 788.py
   resource_type: worker
