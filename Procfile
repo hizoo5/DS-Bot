@@ -1,1 +1,1 @@
-web: python 788.py
+worker: python 788.py
