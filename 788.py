@@ -97,104 +97,9 @@ def check_authorization(user_id: int) -> bool:
     return False
 
 # ==========================================
-# BACKUP SYSTEM FOR PERSISTENT STORAGE
+# DATABASE-ONLY SYSTEM (NO BACKUP FILES)
 # ==========================================
-BACKUP_DIR = "account_backups"
-BACKUP_FILE = os.path.join(BACKUP_DIR, "accounts_backup.json")
-
-def ensure_backup_dir():
-    """Create backup directory if it doesn't exist"""
-    if not os.path.exists(BACKUP_DIR):
-        os.makedirs(BACKUP_DIR)
-        print(f"[✓] Created backup directory: {BACKUP_DIR}")
-
-def load_backup_data():
-    """Load all backed up accounts from JSON file"""
-    ensure_backup_dir()
-    if os.path.exists(BACKUP_FILE):
-        try:
-            with open(BACKUP_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return {"accounts": [], "last_updated": ""}
-    return {"accounts": [], "last_updated": ""}
-
-def save_account_to_backup(account_data, user_id=None):
-    """Save account to backup file AND database immediately after successful registration"""
-    ensure_backup_dir()
-    try:
-        backup = load_backup_data()
-        
-        # Add timestamp and sequential ID
-        account_data["id"] = len(backup["accounts"]) + 1
-        account_data["registered_at"] = datetime.now().isoformat()
-        
-        backup["accounts"].append(account_data)
-        backup["last_updated"] = datetime.now().isoformat()
-        
-        # Write to file
-        with open(BACKUP_FILE, 'w', encoding='utf-8') as f:
-            json.dump(backup, f, indent=2, ensure_ascii=False)
-        
-        # Also save to database if user_id provided
-        if user_id:
-            mode = account_data.get("mode", "MAIN")
-            db.save_account(
-                user_id=user_id,
-                phone=account_data["username"],
-                username=account_data["username"],
-                password=account_data["password"],
-                mode=mode,
-                proxy=account_data.get("ip", "")
-            )
-        
-        print(f"[✓] Account backed up: {account_data['username']}")
-        return True
-    except Exception as e:
-        print(f"[ERROR] Failed to backup account: {str(e)[:50]}")
-        return False
-
-def get_backup_summary():
-    """Get summary of all backed up accounts with proper formatting"""
-    backup = load_backup_data()
-    accounts = backup.get("accounts", [])
-    
-    if not accounts:
-        return "📭 No accounts in backup yet."
-    
-    total = len(accounts)
-    main_count = len([a for a in accounts if a.get("mode") == "MAIN"])
-    dummy_count = len([a for a in accounts if a.get("mode") == "DUMMY"])
-    
-    summary = f"📊 <b>BACKUP SUMMARY</b>\n"
-    summary += f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    summary += f"📊 Total Accounts: {total}\n"
-    summary += f"👤 MAIN: {main_count}\n"
-    summary += f"👥 DUMMY: {dummy_count}\n"
-    summary += f"🕐 Last Updated: {backup.get('last_updated', 'Never')}\n"
-    summary += f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    # Group by batches
-    batches = {}
-    for acc in accounts:
-        batch = acc.get("batch_name", "unknown")
-        if batch not in batches:
-            batches[batch] = []
-        batches[batch].append(acc)
-    
-    summary += "<b>Recent Accounts:</b>\n"
-    for acc in accounts[-10:]:  # Show last 10
-        summary += f"#{acc['id']} 📱 <code>{acc['username']}</code> ({acc['mode']})\n"
-    
-    return summary
-
-def export_accounts_to_text():
-    """Export all accounts to readable text format"""
-    backup = load_backup_data()
-    accounts = backup.get("accounts", [])
-    
-    if not accounts:
-        return "No accounts in backup."
+# All accounts stored ONLY in database
     
     text = "=" * 80 + "\n"
     text += "ACCOUNT BACKUP - FULL EXPORT\n"
@@ -1333,7 +1238,7 @@ def show_backup(message):
 
 @bot.message_handler(commands=['export'])
 def export_backup(message):
-    """Export current user's accounts to text file"""
+    """Export current user's accounts as formatted text"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     
@@ -1349,19 +1254,16 @@ def export_backup(message):
         safe_send_message(chat_id, "📭 No accounts to export.", parse_mode="HTML")
         return
     
-    ensure_backup_dir()
-    export_file = os.path.join(BACKUP_DIR, f"my_accounts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
-    
     try:
         export_text = f"📄 ACCOUNT EXPORT - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-        export_text += "="*60 + "\n\n"
+        export_text += "="*70 + "\n\n"
         
         main_accs = [a for a in all_accounts if a['mode'] == 'MAIN']
         dummy_accs = [a for a in all_accounts if a['mode'] == 'DUMMY']
         
         if main_accs:
             export_text += f"🔴 MAIN ACCOUNTS ({len(main_accs)})\n"
-            export_text += "-"*60 + "\n"
+            export_text += "-"*70 + "\n"
             for idx, acc in enumerate(main_accs, 1):
                 export_text += f"{idx}. Username: {acc['username']}\n"
                 export_text += f"   Password: {acc['password']}\n"
@@ -1369,17 +1271,25 @@ def export_backup(message):
         
         if dummy_accs:
             export_text += f"\n🔵 DUMMY ACCOUNTS ({len(dummy_accs)})\n"
-            export_text += "-"*60 + "\n"
+            export_text += "-"*70 + "\n"
             for idx, acc in enumerate(dummy_accs, 1):
                 export_text += f"{idx}. Username: {acc['username']}\n"
                 export_text += f"   Password: {acc['password']}\n"
                 export_text += f"   Created: {acc['created_at']}\n\n"
         
-        with open(export_file, 'w', encoding='utf-8') as f:
+        # Save to temp file and send
+        temp_export_file = f"/tmp/export_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        with open(temp_export_file, 'w', encoding='utf-8') as f:
             f.write(export_text)
         
-        with open(export_file, 'rb') as f:
-            bot.send_document(chat_id, f, caption=f"📄 Your Accounts ({len(all_accounts)} total)")
+        with open(temp_export_file, 'rb') as f:
+            bot.send_document(chat_id, f, caption=f"📄 Your Accounts Export ({len(all_accounts)} total)")
+        
+        # Clean up temp file
+        try:
+            os.remove(temp_export_file)
+        except:
+            pass
         
         print(f"[✓] Exported {len(all_accounts)} accounts for user {user_id}")
     except Exception as e:
@@ -1806,39 +1716,36 @@ def handle_callback(call):
             if result and result["success"]:
                 state["results"].append(result)
                 
-                # BACKUP: Save account to persistent storage IMMEDIATELY
-                backup_data = {
-                    "batch_name": state["batch_name"],
-                    "mode": mode,
-                    "username": result['username'],
-                    "password": result['password'],
-                    "ip": result['ip'],
-                    "invite_link": result.get('invite_link', ''),
-                    "deposit_channel_1": result.get('deposit_channel_1', ''),
-                    "deposit_channel_2": result.get('deposit_channel_2', ''),
-                }
-                save_account_to_backup(backup_data, user_id=state.get("user_id"))
+                # Save account to database ONLY
+                try:
+                    db.save_account(
+                        user_id=state.get("user_id"),
+                        phone=result['username'],
+                        username=result['username'],
+                        password=result['password'],
+                        mode=mode,
+                        proxy=result.get('ip', '')
+                    )
+                    print(f"[✓] Account saved to database: {result['username']}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to save account: {e}")
                 
-                # Format output based on mode
+                # Format output during generation (show D-Links for DUMMY)
                 if mode == "MAIN":
                     output = (
-                        f"📋 <b>MAIN ENTRY {state['current']} / {state['count']}</b> ✅\n\n"
-                        f"📱 <b>Number</b>   : <code>{result['username']}</code>\n"
-                        f"🔑 <b>Password</b>  : <code>{result['password']}</code>\n"
-                        f"🌐 <b>IP Address</b> : <code>{result['ip']}</code>\n"
-                        f"🔗 <b>Invite Link</b> : <code>{result.get('invite_link', 'N/A')}</code>\n"
-                        f"💾 <b>Status</b>    : Backed up ✓"
+                        f"📱 Number   : <code>{result['username']}</code>\n"
+                        f"🔑 Password  : <code>{result['password']}</code>\n"
+                        f"🌐 IP Address : <code>{result['ip']}</code>\n"
+                        f"🔗 Ref Link : <code>{result.get('invite_link', 'N/A')}</code>"
                     )
-                else:  # DUMMY mode
+                else:  # DUMMY mode - show D-Links during generation
                     output = (
-                        f"📋 <b>DUMMY ENTRY {state['current']} / {state['count']}</b> ✅\n\n"
-                        f"📱 <b>Number</b>   : <code>{result['username']}</code>\n"
-                        f"🔑 <b>Password</b>  : <code>{result['password']}</code>\n"
-                        f"🌐 <b>IP Address</b> : <code>{result['ip']}</code>\n"
-                        f"🔗 <b>Invite Link</b> : <code>{result.get('invite_link', 'N/A')}</code>\n"
-                        f"💳 <b>D-Link C1</b>  : <code>{result.get('deposit_channel_1', 'N/A')}</code>\n"
-                        f"💳 <b>D-Link C2</b>  : <code>{result.get('deposit_channel_2', 'N/A')}</code>\n"
-                        f"💾 <b>Status</b>    : Backed up ✓"
+                        f"📱 Number: <code>{result['username']}</code>\n"
+                        f"🔑 Password: <code>{result['password']}</code>\n"
+                        f"🌐 IP: <code>{result['ip']}</code>\n"
+                        f"🔗 Ref Link: <code>{result.get('invite_link', 'N/A')}</code>\n"
+                        f"💳 D-Link C1: <code>{result.get('deposit_channel_1', 'N/A')}</code>\n"
+                        f"💳 D-Link C2: <code>{result.get('deposit_channel_2', 'N/A')}</code>"
                     )
                 
                 safe_edit_message(
@@ -1853,14 +1760,20 @@ def handle_callback(call):
                 
                 # Show successful results so far if any
                 if state["results"]:
-                    summary = f"<b>✅ {len(state['results'])} Account(s) Registered Before Error:</b>\n\n"
+                    summary = f"🔴 <b>{state['current']}TH {mode} FAILED TO REGISTER!</b>\n\n"
+                    summary += f"<b>REGISTERED ACCOUNTS:</b>\n\n"
+                    
                     for idx, res in enumerate(state["results"], 1):
+                        label = f"MAIN:" if res.get('mode') == 'MAIN' else f"{mode} {idx}:"
                         summary += (
-                            f"<b>#{idx}</b> 📱 <code>{res['username']}</code>\n"
-                            f"    🔑 <code>{res['password']}</code> • 🌐 <code>{res['ip']}</code>\n"
+                            f"<b>{label}</b>\n"
+                            f"📱 Number: <code>{res['username']}</code>\n"
+                            f"🔑 Password: <code>{res['password']}</code>\n"
+                            f"🌐 IP: <code>{res['ip']}</code>\n"
+                            f"🔗 Ref Link: <code>{res.get('invite_link', 'N/A')}</code>\n\n"
                         )
                     
-                    error_msg = f"{summary}\n\n{error_msg}"
+                    error_msg = f"{summary}\n{error_msg}"
                 
                 safe_edit_message(chat_id, working_msg_id, error_msg, parse_mode="HTML")
                 state["current"] -= 1
@@ -1874,14 +1787,20 @@ def handle_callback(call):
             
             # Show successful results so far if any
             if state["results"]:
-                summary = f"<b>✅ {len(state['results'])} Account(s) Registered Before Error:</b>\n\n"
+                summary = f"🔴 <b>{state['current']}TH {mode} FAILED TO REGISTER!</b>\n\n"
+                summary += f"<b>REGISTERED ACCOUNTS:</b>\n\n"
+                
                 for idx, res in enumerate(state["results"], 1):
+                    label = f"MAIN:" if res.get('mode') == 'MAIN' else f"{mode} {idx}:"
                     summary += (
-                        f"<b>#{idx}</b> 📱 <code>{res['username']}</code>\n"
-                        f"    🔑 <code>{res['password']}</code> • 🌐 <code>{res['ip']}</code>\n"
+                        f"<b>{label}</b>\n"
+                        f"📱 Number: <code>{res['username']}</code>\n"
+                        f"🔑 Password: <code>{res['password']}</code>\n"
+                        f"🌐 IP: <code>{res['ip']}</code>\n"
+                        f"🔗 Ref Link: <code>{res.get('invite_link', 'N/A')}</code>\n\n"
                     )
                 
-                error_msg = f"{summary}\n\n{error_msg}"
+                error_msg = f"{summary}\n{error_msg}"
             
             safe_edit_message(chat_id, working_msg_id, error_msg, parse_mode="HTML")
     
@@ -1892,30 +1811,36 @@ def handle_callback(call):
             pass
         
         if state["results"]:
-            date_str = datetime.now().strftime("%Y-%m-%d")
-            summary = f"✨ <b>Done!</b>\n\n🏷️ <code>{state['batch_name']}</code> ({date_str})\n\n"
+            summary = "✨ <b>GENERATION COMPLETE!</b>\n\n"
             
-            for idx, res in enumerate(state["results"], 1):
-                mode_label = res['mode'] if 'mode' in res else state['mode']
-                summary += (
-                    f"<b>Entry {idx}:</b>\n"
-                    f"📱 Number: <code>{res['username']}</code>\n"
-                    f"🔑 Password: <code>{res['password']}</code>\n"
-                    f"🌐 IP: <code>{res['ip']}</code>\n"
-                    f"🔗 Ref Link: <code>{res.get('invite_link', 'N/A')}</code>\n"
-                )
-                
-                # Add deposit links if DUMMY mode
-                if state['mode'] == "DUMMY":
+            # Group accounts by mode
+            main_accounts = [res for res in state["results"] if res.get('mode') == 'MAIN']
+            dummy_accounts = [res for res in state["results"] if res.get('mode') == 'DUMMY']
+            
+            # Show MAIN accounts
+            if main_accounts:
+                summary += "<b>MAIN:</b>\n"
+                for res in main_accounts:
                     summary += (
-                        f"💳 D-Link C1: <code>{res.get('deposit_channel_1', 'N/A')}</code>\n"
-                        f"💳 D-Link C2: <code>{res.get('deposit_channel_2', 'N/A')}</code>\n"
+                        f"📱 Number   : <code>{res['username']}</code>\n"
+                        f"🔑 Password  : <code>{res['password']}</code>\n"
+                        f"🌐 IP Address : <code>{res['ip']}</code>\n"
+                        f"🔗 Invite Link : <code>{res.get('invite_link', 'N/A')}</code>\n\n"
                     )
-                
-                summary += "\n"
             
-            summary += "💾 <b>All accounts have been backed up safely!</b>\n"
-            summary += "Use /backup or /export to retrieve them anytime."
+            # Show invited DUMMY accounts (NO D-Links in final list)
+            if dummy_accounts:
+                summary += "<b>INVITED DUMMY ACCOUNTS:</b>\n"
+                for idx, res in enumerate(dummy_accounts, 1):
+                    summary += (
+                        f"<b>Dummy {idx}</b>\n"
+                        f"📱 Number: <code>{res['username']}</code>\n"
+                        f"🔑 Password: <code>{res['password']}</code>\n"
+                        f"🌐 IP: <code>{res['ip']}</code>\n"
+                        f"🔗 Ref Link: <code>{res.get('invite_link', 'N/A')}</code>\n\n"
+                    )
+            
+            summary += "💾 <b>All accounts stored in database!</b>"
             
             safe_send_message(chat_id, summary, parse_mode="HTML")
         else:
@@ -2117,10 +2042,9 @@ def refresh_menu(chat_id):
 if __name__ == "__main__":
     print("[*] Starting Telegram Bot C2 Server...")
     
-    # Initialize backup system
-    ensure_backup_dir()
-    backup = load_backup_data()
-    print(f"[✓] Backup system initialized. Current accounts in backup: {len(backup.get('accounts', []))}")
+    # Initialize systems
+    print(f"[✓] Database initialized successfully")
+    print(f"[✓] Verified users system ready")
     
     # Connect to Telegram with retry logic
     max_consecutive_errors = 0
