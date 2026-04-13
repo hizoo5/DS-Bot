@@ -32,6 +32,41 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ==========================================
 db = AccountDatabase("accounts.db")
 
+# Verified users tracker - ONLY updated when /key succeeds
+VERIFIED_USERS = set()
+
+def load_verified_users():
+    """Load verified users from persistent file"""
+    global VERIFIED_USERS
+    try:
+        if os.path.exists("verified_users.json"):
+            with open("verified_users.json", 'r') as f:
+                data = json.load(f)
+                VERIFIED_USERS = set(data.get("verified_users", []))
+                print(f"[✓] Loaded {len(VERIFIED_USERS)} verified users")
+    except Exception as e:
+        print(f"[ERROR] Failed to load verified users: {e}")
+        VERIFIED_USERS = set()
+
+def save_verified_users():
+    """Save verified users to persistent file"""
+    try:
+        with open("verified_users.json", 'w') as f:
+            json.dump({"verified_users": list(VERIFIED_USERS)}, f, indent=2)
+    except Exception as e:
+        print(f"[ERROR] Failed to save verified users: {e}")
+
+def add_verified_user(user_id: int):
+    """Add user to verified list"""
+    global VERIFIED_USERS
+    if user_id not in VERIFIED_USERS:
+        VERIFIED_USERS.add(user_id)
+        save_verified_users()
+        print(f"[✓] Added user {user_id} to verified users")
+
+# Load verified users on startup
+load_verified_users()
+
 def load_authorized_users():
     """Load authorized users from config file"""
     try:
@@ -45,7 +80,7 @@ def load_authorized_users():
 AUTHORIZED_USERS, ADMIN_USER_ID = load_authorized_users()
 
 def check_authorization(user_id: int) -> bool:
-    """Check if user is authorized via access key or authorized_users list"""
+    """Check if user is authorized via verified key registration"""
     # Check if admin
     if user_id == ADMIN_USER_ID:
         return True
@@ -54,16 +89,10 @@ def check_authorization(user_id: int) -> bool:
     if user_id in AUTHORIZED_USERS:
         return True
     
-    # Check if user has registered with an access key
-    try:
-        with open("access_keys.json", 'r') as f:
-            access_config = json.load(f)
-            keys = access_config.get("access_keys", {})
-            for key, key_data in keys.items():
-                if key_data.get("user_id") == user_id and key_data.get("used"):
-                    return True
-    except:
-        pass
+    # CRITICAL: Check if user has successfully verified with an access key
+    # This is the ONLY way for new users to access the bot
+    if user_id in VERIFIED_USERS:
+        return True
     
     return False
 
@@ -1182,19 +1211,22 @@ def send_welcome(message):
     user_id = message.from_user.id
     username = message.from_user.username or f"user_{user_id}"
     
-    # STRICT AUTHORIZATION CHECK - user MUST have a valid access key first
-    if not check_authorization(user_id):
+    # =================================================================
+    # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
+    # =================================================================
+    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
         bot.send_message(chat_id, 
-            "🔐 <b>Access Denied!</b>\n\n"
-            "This bot requires an <b>Access Key</b> to use.\n\n"
-            "Please provide your access key:\n\n"
+            "🔐 <b>❌ ACCESS DENIED</b>\n\n"
+            "You must provide a valid <b>Access Key</b> FIRST.\n\n"
+            "Please use:\n"
             "<code>/key YOUR_ACCESS_KEY_HERE</code>\n\n"
-            "<i>If you do not have a key, contact administrator.</i>",
+            "<i>Without a valid key, you cannot use this bot.</i>\n"
+            "<i>Contact administrator if you don't have a key.</i>",
             parse_mode="HTML")
-        print(f"[BLOCKED] Unauthorized user {user_id} ({username}) tried to access /start")
+        print(f"[BLOCKED] Unauthorized user {user_id} ({username}) attempted /start")
         return
     
-    # User is registered, continue with bot setup
+    # User is authorized, proceed
     db.add_user(user_id, username, is_authorized=True)
     
     user_state[chat_id] = {
@@ -1230,6 +1262,7 @@ def send_welcome(message):
         try:
             msg = bot.send_message(chat_id, text, reply_markup=get_menu_markup(), parse_mode="HTML")
             user_state[chat_id]["menu_msg_id"] = msg.message_id
+            print(f"[✓] User {user_id} ({username}) accessed /start - AUTHORIZED")
             break
         except Exception as e:
             print(f"[*] Telegram send_message retry {retry_attempt + 1}/3: {str(e)[:50]}")
@@ -1507,6 +1540,9 @@ def verify_access_key(message):
         with open("access_keys.json", 'w') as f:
             json.dump(access_config, f, indent=2)
         
+        # CRITICAL: Add to verified users - this enables access
+        add_verified_user(user_id)
+        
         db.add_user(user_id, username, is_authorized=True)
         
         bot.send_message(chat_id, 
@@ -1532,9 +1568,13 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "Session expired. Type /start")
         return
     
-    # Verify authorization before allowing any action
-    if not check_authorization(user_id):
-        bot.answer_callback_query(call.id, "❌ Access Denied. Please use /key first.", show_alert=True)
+    # =================================================================
+    # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
+    # =================================================================
+    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+        bot.answer_callback_query(call.id, 
+            "❌ ACCESS DENIED\n\nYou must provide an access key with /key", 
+            show_alert=True)
         return
 
     if call.data == "cancel":
@@ -1746,25 +1786,15 @@ def process_inv_count(message):
     user_id = message.from_user.id
     state = user_state.get(chat_id)
     
-    # Verify authorization
-    try:
-        with open("access_keys.json", 'r') as f:
-            access_config = json.load(f)
-            keys = access_config.get("access_keys", {})
-    except:
-        keys = {}
+    # =================================================================
+    # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
+    # =================================================================
+    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+        bot.send_message(chat_id, "❌ <b>ACCESS DENIED</b>\n\nYou must provide an access key with /key first.", parse_mode="HTML")
+        return
     
-    user_registered = False
-    for key, key_data in keys.items():
-        if key_data.get("user_id") == user_id:
-            user_registered = True
-            break
-    
-    if not user_registered:
-        user_registered = check_authorization(user_id)
-    
-    if not user_registered or not state:
-        bot.send_message(chat_id, "❌ Access Denied. Please use /key first.", parse_mode="HTML")
+    if not state:
+        bot.send_message(chat_id, "❌ Session expired. Please use /start", parse_mode="HTML")
         return
     
     bot.delete_message(chat_id, message.message_id)
@@ -1805,25 +1835,15 @@ def process_ref_link(message):
     state = user_state.get(chat_id)
     link = message.text
     
-    # Verify authorization
-    try:
-        with open("access_keys.json", 'r') as f:
-            access_config = json.load(f)
-            keys = access_config.get("access_keys", {})
-    except:
-        keys = {}
+    # =================================================================
+    # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
+    # =================================================================
+    if user_id not in VERIFIED_USERS and user_id != ADMIN_USER_ID and user_id not in AUTHORIZED_USERS:
+        bot.send_message(chat_id, "❌ <b>ACCESS DENIED</b>\n\nYou must provide an access key with /key first.", parse_mode="HTML")
+        return
     
-    user_registered = False
-    for key, key_data in keys.items():
-        if key_data.get("user_id") == user_id:
-            user_registered = True
-            break
-    
-    if not user_registered:
-        user_registered = check_authorization(user_id)
-    
-    if not user_registered or not state:
-        bot.send_message(chat_id, "❌ Access Denied. Please use /key first.", parse_mode="HTML")
+    if not state:
+        bot.send_message(chat_id, "❌ Session expired. Please use /start", parse_mode="HTML")
         return
     
     try:
