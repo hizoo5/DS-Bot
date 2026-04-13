@@ -1,0 +1,6 @@
+{
+    "authorized_users": [
+    ],
+    "admin_user_id": 0,
+    "description": "Add Telegram user IDs to 'authorized_users' list to grant access. Set admin_user_id to your Telegram ID."
+}

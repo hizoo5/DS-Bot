@@ -22,9 +22,33 @@ import sqlite3
 from queue import Queue
 import hashlib
 import os
+from database import AccountDatabase
 
 # Suppress SSL warnings globally
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ==========================================
+# MULTI-USER DATABASE SYSTEM
+# ==========================================
+db = AccountDatabase("accounts.db")
+
+def load_authorized_users():
+    """Load authorized users from config file"""
+    try:
+        with open("authorized_users.json", 'r') as f:
+            config = json.load(f)
+            return config.get("authorized_users", []), config.get("admin_user_id", 0)
+    except:
+        print("[WARNING] authorized_users.json not found, initializing...")
+        return [], 0
+
+AUTHORIZED_USERS, ADMIN_USER_ID = load_authorized_users()
+
+def check_authorization(user_id: int) -> bool:
+    """Check if user is authorized"""
+    if user_id == ADMIN_USER_ID:
+        return True
+    return user_id in AUTHORIZED_USERS
 
 # ==========================================
 # BACKUP SYSTEM FOR PERSISTENT STORAGE
@@ -49,8 +73,8 @@ def load_backup_data():
             return {"accounts": [], "last_updated": ""}
     return {"accounts": [], "last_updated": ""}
 
-def save_account_to_backup(account_data):
-    """Save account to backup file immediately after successful registration"""
+def save_account_to_backup(account_data, user_id=None):
+    """Save account to backup file AND database immediately after successful registration"""
     ensure_backup_dir()
     try:
         backup = load_backup_data()
@@ -65,6 +89,18 @@ def save_account_to_backup(account_data):
         # Write to file
         with open(BACKUP_FILE, 'w', encoding='utf-8') as f:
             json.dump(backup, f, indent=2, ensure_ascii=False)
+        
+        # Also save to database if user_id provided
+        if user_id:
+            mode = account_data.get("mode", "MAIN")
+            db.save_account(
+                user_id=user_id,
+                phone=account_data["username"],
+                username=account_data["username"],
+                password=account_data["password"],
+                mode=mode,
+                proxy=account_data.get("ip", "")
+            )
         
         print(f"[✓] Account backed up: {account_data['username']}")
         return True
@@ -1088,7 +1124,20 @@ def get_result_markup(current, target):
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
+    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{user_id}"
+    
+    # Check authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ <b>Access Denied</b>\n\nYou are not authorized to use this bot.", parse_mode="HTML")
+        print(f"[BLOCKED] Unauthorized user {user_id} ({username}) tried to access")
+        return
+    
+    # Add user to database
+    db.add_user(user_id, username, is_authorized=True)
+    
     user_state[chat_id] = {
+        "user_id": user_id,
         "mode": "MAIN", 
         "ref_code": "", 
         "count": 1, 
@@ -1156,79 +1205,104 @@ def export_backup(message):
         safe_send_message(chat_id, f"❌ Export failed: {str(e)[:100]}", parse_mode="HTML")
         print(f"[ERROR] Export failed: {str(e)}")
 
-@bot.message_handler(commands=['latest_main'])
-def show_latest_main(message):
-    """Show latest 5 MAIN accounts only"""
+@bot.message_handler(commands=['main'])
+def show_main_accounts(message):
+    """Show all MAIN accounts for current user with credentials"""
     chat_id = message.chat.id
-    backup = load_backup_data()
-    accounts = backup.get("accounts", [])
+    user_id = message.from_user.id
     
-    main_accounts = [a for a in accounts if a.get("mode") == "MAIN"]
-    
-    if not main_accounts:
-        safe_send_message(chat_id, "📭 No MAIN accounts in backup yet.", parse_mode="HTML")
+    # Check authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ Access Denied", parse_mode="HTML")
         return
     
-    # Get latest 5
-    latest_5 = main_accounts[-5:]
+    # Get user's main accounts from database
+    main_accounts = db.get_user_main_accounts(user_id)
     
-    text = "📋 <b>LATEST 5 MAIN ACCOUNTS</b>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    if not main_accounts:
+        safe_send_message(chat_id, "📭 No MAIN accounts yet.", parse_mode="HTML")
+        return
     
-    for idx, acc in enumerate(latest_5, 1):
-        user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
+    text = f"📋 <b>YOUR MAIN ACCOUNTS ({len(main_accounts)})</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    for idx, acc in enumerate(main_accounts, 1):
         text += f"<b>#{idx}</b>\n"
-        text += f"📱 <code>{acc['username']}</code>\n"
-        text += f"🔑 <code>{acc['password']}</code>\n"
-        text += f"🆔 User ID: <code>{user_id}</code>\n"
-        text += f"🌐 <code>{acc['ip']}</code>\n"
-        text += f"🔗 <code>{acc['invite_link']}</code>\n\n"
+        text += f"📱 Username: <code>{acc['username']}</code>\n"
+        text += f"🔑 Password: <code>{acc['password']}</code>\n"
+        text += f"📅 Created: {acc['created_at'][:10]}\n"
+        text += "\n"
     
     safe_send_message(chat_id, text, parse_mode="HTML")
 
 @bot.message_handler(commands=['all_accounts'])
 def show_all_accounts(message):
-    """Show ALL accounts (MAIN + DUMMY) from backup"""
+    """Show ALL accounts (MAIN + DUMMY) for current user"""
     chat_id = message.chat.id
-    backup = load_backup_data()
-    accounts = backup.get("accounts", [])
+    user_id = message.from_user.id
     
-    if not accounts:
-        safe_send_message(chat_id, "📭 No accounts in backup yet.", parse_mode="HTML")
+    # Check authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ Access Denied", parse_mode="HTML")
         return
     
-    main_accounts = [a for a in accounts if a.get("mode") == "MAIN"]
-    dummy_accounts = [a for a in accounts if a.get("mode") == "DUMMY"]
+    # Get user's accounts from database
+    all_accounts = db.get_user_accounts(user_id)
+    counts = db.get_user_account_count(user_id)
     
-    text = "📊 <b>ALL BACKED UP ACCOUNTS</b>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    text += f"👤 MAIN: {len(main_accounts)}\n"
-    text += f"👥 DUMMY: {len(dummy_accounts)}\n"
-    text += f"📊 Total: {len(accounts)}\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    if not all_accounts:
+        safe_send_message(chat_id, "📭 No accounts yet.", parse_mode="HTML")
+        return
     
-    # Show all MAIN accounts
-    if main_accounts:
+    text = f"📊 <b>YOUR ACCOUNTS</b>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    text += f"👤 MAIN: {counts['main']}\n"
+    text += f"👥 DUMMY: {counts['dummy']}\n"
+    text += f"📊 Total: {counts['total']}\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Group by mode
+    main_accs = [a for a in all_accounts if a['mode'] == 'MAIN']
+    dummy_accs = [a for a in all_accounts if a['mode'] == 'DUMMY']
+    
+    if main_accs:
         text += "<b>🔴 MAIN ACCOUNTS:</b>\n"
-        for idx, acc in enumerate(main_accounts, 1):
-            user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
-            text += f"{idx}. 📱 <code>{acc['username']}</code> | 🆔 {user_id}\n"
+        for idx, acc in enumerate(main_accs, 1):
+            text += f"{idx}. 📱 <code>{acc['username']}</code>\n"
         text += "\n"
     
-    # Show all DUMMY accounts
-    if dummy_accounts:
-        text += "<b>🔵 DUMMY ACCOUNTS (Referrals):</b>\n"
-        for idx, acc in enumerate(dummy_accounts, 1):
-            user_id = acc.get('invite_link', '').split('=')[-1] if '=' in acc.get('invite_link', '') else 'N/A'
-            text += f"{idx}. 📱 <code>{acc['username']}</code> | 🆔 {user_id}\n"
+    if dummy_accs:
+        text += "<b>🔵 DUMMY ACCOUNTS:</b>\n"
+        for idx, acc in enumerate(dummy_accs, 1):
+            text += f"{idx}. 📱 <code>{acc['username']}</code>\n"
     
     safe_send_message(chat_id, text, parse_mode="HTML")
 
 @bot.message_handler(commands=['account_detail'])
 def show_account_detail(message):
-    """Show DETAILED view of all accounts with credentials"""
+    """Show DETAILED credentials of a specific account"""
     chat_id = message.chat.id
-    backup = load_backup_data()
+    user_id = message.from_user.id
+    
+    # Check authorization
+    if not check_authorization(user_id):
+        bot.send_message(chat_id, "❌ Access Denied", parse_mode="HTML")
+        return
+    
+    # Get all user's accounts
+    all_accounts = db.get_user_accounts(user_id)
+    
+    if not all_accounts:
+        safe_send_message(chat_id, "📭 No accounts to show.", parse_mode="HTML")
+        return
+    
+    # Create buttons for account selection
+    markup = InlineKeyboardMarkup()
+    for idx, acc in enumerate(all_accounts[:10], 1):  # Show first 10
+        btn_text = f"{idx}. {acc['username']} ({acc['mode']})"
+        markup.add(InlineKeyboardButton(btn_text, callback_data=f"detail_{acc['id']}"))
+    
+    safe_send_message(chat_id, "📱 <b>Select account to view details:</b>", reply_markup=markup, parse_mode="HTML")
     accounts = backup.get("accounts", [])
     
     if not accounts:
@@ -1374,7 +1448,7 @@ def handle_callback(call):
                     "deposit_channel_1": result.get('deposit_channel_1', ''),
                     "deposit_channel_2": result.get('deposit_channel_2', ''),
                 }
-                save_account_to_backup(backup_data)
+                save_account_to_backup(backup_data, user_id=state.get("user_id"))
                 
                 # Format output based on mode
                 if mode == "MAIN":
@@ -1484,6 +1558,28 @@ def handle_callback(call):
         
         # Show menu again
         refresh_menu(chat_id)
+    
+    # Handle account detail callbacks
+    elif call.data.startswith("detail_"):
+        account_id = int(call.data.split("_")[1])
+        user_id = call.message.chat.id
+        
+        # Get account details from database
+        account = db.get_account_detail(user_id, account_id)
+        
+        if account:
+            text = f"📱 <b>ACCOUNT DETAILS</b>\n"
+            text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            text += f"📱 Username: <code>{account['username']}</code>\n"
+            text += f"🔑 Password: <code>{account['password']}</code>\n"
+            text += f"📞 Phone: <code>{account['phone']}</code>\n"
+            text += f"📌 Mode: <b>{account['mode']}</b>\n"
+            text += f"📅 Created: {account['created_at']}\n"
+            text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            safe_edit_message(chat_id, call.message.message_id, text, parse_mode="HTML")
+        else:
+            bot.answer_callback_query(call.id, "Account not found", show_alert=True)
 
 
 def process_inv_count(message):
