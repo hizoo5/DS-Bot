@@ -1244,11 +1244,6 @@ def send_welcome(message):
     
     # Then show main menu after site selection
     show_main_menu(chat_id, user_state[chat_id])
-            print(f"[*] Telegram send_message retry {retry_attempt + 1}/3: {str(e)[:50]}")
-            if retry_attempt < 2:
-                time.sleep(1)
-            else:
-                print(f"[ERROR] Failed to send welcome message after 3 retries")
 
 @bot.message_handler(commands=['backup'])
 def show_backup(message):
