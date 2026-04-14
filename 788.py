@@ -56,10 +56,12 @@ def load_verified_users():
         VERIFIED_USERS = set()
 
 def save_verified_users():
-    """Save verified users to persistent file"""
+    """Save verified users to persistent file and backup to GitHub"""
     try:
         with open("verified_users.json", 'w') as f:
             json.dump({"verified_users": list(VERIFIED_USERS)}, f, indent=2)
+        # Backup to GitHub
+        os.system("cd . && git add verified_users.json && git commit -m 'AUTO: Update verified users' && git push > /dev/null 2>&1 &")
     except Exception as e:
         print(f"[ERROR] Failed to save verified users: {e}")
 
@@ -1419,7 +1421,7 @@ def show_all_accounts(message):
 
 @bot.message_handler(commands=['account_detail'])
 def show_account_detail(message):
-    """Show DETAILED credentials of a specific account"""
+    """Show DETAILED credentials of a specific account with pagination"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     
@@ -1435,13 +1437,38 @@ def show_account_detail(message):
         safe_send_message(chat_id, "📭 No accounts to show.", parse_mode="HTML")
         return
     
-    # Create buttons for account selection - ONLY user's own accounts
+    # Show first page (page 0)
+    show_account_page(chat_id, user_id, all_accounts, page=0)
+
+def show_account_page(chat_id, user_id, all_accounts, page=0):
+    """Display a page of accounts with pagination"""
+    accounts_per_page = 10
+    total_pages = (len(all_accounts) + accounts_per_page - 1) // accounts_per_page
+    
+    # Calculate start and end for this page
+    start = page * accounts_per_page
+    end = min(start + accounts_per_page, len(all_accounts))
+    page_accounts = all_accounts[start:end]
+    
+    # Create buttons for account selection
     markup = InlineKeyboardMarkup()
-    for idx, acc in enumerate(all_accounts[:10], 1):  # Show first 10
+    for idx, acc in enumerate(page_accounts, start + 1):
         btn_text = f"{idx}. {acc['username']} ({acc['mode']})"
         markup.add(InlineKeyboardButton(btn_text, callback_data=f"detail_{acc['id']}"))
     
-    safe_send_message(chat_id, f"📱 <b>Your Accounts ({len(all_accounts)} total)</b>\n\nSelect account to view details:", reply_markup=markup, parse_mode="HTML")
+    # Add pagination buttons
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"acc_page_{page-1}_{user_id}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"acc_page_{page+1}_{user_id}"))
+    
+    if nav_buttons:
+        markup.row(*nav_buttons)
+    
+    page_info = f"Page {page + 1}/{total_pages}" if total_pages > 1 else ""
+    msg_text = f"📱 <b>Your Accounts ({len(all_accounts)} total)</b>\n{page_info}\n\nSelect account to view details:"
+    safe_send_message(chat_id, msg_text, reply_markup=markup, parse_mode="HTML")
 
 @bot.message_handler(commands=['recovery_status'])
 def recovery_status(message):
@@ -1869,37 +1896,42 @@ def handle_callback(call):
         except:
             pass
         
-        if state["results"]:
+        # FIXED: Show ALL user accounts from database (not just state["results"])
+        user_id = call.from_user.id
+        all_user_accounts = db.get_user_accounts(user_id)
+        
+        # If generated in this session, show them first; then all DB accounts
+        if state["results"] or all_user_accounts:
             summary = "✨ <b>GENERATION COMPLETE!</b>\n\n"
             
-            # Group accounts by mode
-            main_accounts = [res for res in state["results"] if res.get('mode') == 'MAIN']
-            dummy_accounts = [res for res in state["results"] if res.get('mode') == 'DUMMY']
-            
-            # Show MAIN accounts
-            if main_accounts:
-                summary += "<b>MAIN:</b>\n"
-                for res in main_accounts:
-                    summary += (
-                        f"📱 Number   : <code>{res['username']}</code>\n"
-                        f"🔑 Password  : <code>{res['password']}</code>\n"
-                        f"🌐 IP Address : <code>{res['ip']}</code>\n"
-                        f"🔗 Invite Link : <code>{res.get('invite_link', 'N/A')}</code>\n\n"
-                    )
-            
-            # Show invited DUMMY accounts (NO D-Links in final list)
-            if dummy_accounts:
-                summary += "<b>INVITED DUMMY ACCOUNTS:</b>\n"
-                for idx, res in enumerate(dummy_accounts, 1):
-                    summary += (
-                        f"<b>Dummy {idx}</b>\n"
-                        f"📱 Number: <code>{res['username']}</code>\n"
-                        f"🔑 Password: <code>{res['password']}</code>\n"
-                        f"🌐 IP: <code>{res['ip']}</code>\n"
-                        f"🔗 Ref Link: <code>{res.get('invite_link', 'N/A')}</code>\n\n"
-                    )
-            
-            summary += "💾 <b>All accounts stored in database!</b>"
+            # Show newly generated accounts (from this session)
+            if state["results"]:
+                main_accounts = [res for res in state["results"] if res.get('mode') == 'MAIN']
+                dummy_accounts = [res for res in state["results"] if res.get('mode') == 'DUMMY']
+                
+                summary += "<b>NEWLY GENERATED:</b>\n"
+                if main_accounts:
+                    summary += "<u>MAIN:</u>\n"
+                    for res in main_accounts:
+                        summary += (
+                            f"📱 Number   : <code>{res['username']}</code>\n"
+                            f"🔑 Password  : <code>{res['password']}</code>\n"
+                            f"🌐 IP Address : <code>{res['ip']}</code>\n"
+                            f"🔗 Invite Link : <code>{res.get('invite_link', 'N/A')}</code>\n\n"
+                        )
+                
+                if dummy_accounts:
+                    summary += "<u>INVITED DUMMY ACCOUNTS:</u>\n"
+                    for idx, res in enumerate(dummy_accounts, 1):
+                        summary += (
+                            f"<b>Dummy {idx}</b>\n"
+                            f"📱 Number: <code>{res['username']}</code>\n"
+                            f"🔑 Password: <code>{res['password']}</code>\n"
+                            f"🌐 IP: <code>{res['ip']}</code>\n"
+                            f"🔗 Ref Link: <code>{res.get('invite_link', 'N/A')}</code>\n\n"
+                        )
+                
+                summary += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             
             # Export backup and commit to GitHub
             db.export_all_to_json("accounts_backup.json")
@@ -1908,6 +1940,11 @@ def handle_callback(call):
                 print("[✓] Accounts backed up to GitHub")
             except Exception as e:
                 print(f"[!] Failed to backup to GitHub: {e}")
+            
+            # Show all accounts count
+            if all_user_accounts:
+                summary += f"📱 <b>Your Total Accounts: {len(all_user_accounts)}</b>\n"
+                summary += "Use /account_detail to view all accounts with full details!\n"
             
             safe_send_message(chat_id, summary, parse_mode="HTML")
         else:
@@ -1919,6 +1956,22 @@ def handle_callback(call):
         
         # Show menu again
         refresh_menu(chat_id)
+    
+    # Handle pagination for account list
+    elif call.data.startswith("acc_page_"):
+        parts = call.data.split("_")
+        page = int(parts[2])
+        user_id = int(parts[3])
+        
+        # Get all accounts for this user
+        all_accounts = db.get_user_accounts(user_id)
+        
+        if all_accounts:
+            show_account_page(call.message.chat.id, user_id, all_accounts, page=page)
+            try:
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except:
+                pass
     
     # Handle account detail callbacks
     elif call.data.startswith("detail_"):
