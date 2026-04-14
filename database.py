@@ -56,6 +56,18 @@ class AccountDatabase:
             )
         ''')
         
+        # Migration: Add site column to existing accounts table if it doesn't exist
+        cursor.execute("PRAGMA table_info(accounts)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'site' not in columns:
+            print("[*] Migrating: Adding 'site' column to accounts table...")
+            try:
+                cursor.execute("ALTER TABLE accounts ADD COLUMN site TEXT DEFAULT '788'")
+                conn.commit()
+                print("[✓] Migration successful: 'site' column added")
+            except Exception as e:
+                print(f"[!] Migration failed: {e}")
+        
         conn.commit()
         conn.close()
         print("[✓] Database initialized successfully")
@@ -325,7 +337,7 @@ class AccountDatabase:
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT user_id, phone_number, username, password, mode, proxy, created_at
+                SELECT user_id, phone_number, username, password, mode, proxy, site, created_at
                 FROM accounts
                 ORDER BY user_id, created_at
             ''')
@@ -342,7 +354,8 @@ class AccountDatabase:
                     "password": row[3],
                     "mode": row[4],
                     "proxy": row[5],
-                    "created_at": row[6]
+                    "site": row[6] if row[6] else '788',
+                    "created_at": row[7]
                 })
             
             with open(filepath, 'w') as f:
@@ -371,11 +384,12 @@ class AccountDatabase:
                 # Ensure user exists
                 self.add_user(acc['user_id'], f"user_{acc['user_id']}")
                 
-                # Insert account
+                # Insert account with site field (default to '788' if not present)
+                site = acc.get('site', '788')
                 cursor.execute('''
                     INSERT OR IGNORE INTO accounts 
-                    (user_id, phone_number, username, password, mode, proxy, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (user_id, phone_number, username, password, mode, proxy, site, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     acc['user_id'],
                     acc['phone_number'],
@@ -383,6 +397,7 @@ class AccountDatabase:
                     acc['password'],
                     acc['mode'],
                     acc['proxy'],
+                    site,
                     acc['created_at']
                 ))
             
