@@ -251,3 +251,28 @@ class AccountDatabase:
         except Exception as e:
             print(f"[ERROR] Failed to delete account: {str(e)}")
             return False
+    
+    def get_all_accounts_by_user(self) -> tuple:
+        """Get all accounts grouped by user_id and mode for debug purposes"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Get grouped stats
+            cursor.execute('''
+                SELECT user_id, mode, COUNT(*) as count 
+                FROM accounts 
+                GROUP BY user_id, mode 
+                ORDER BY user_id
+            ''')
+            all_accs = cursor.fetchall()
+            
+            # Get total count
+            cursor.execute("SELECT COUNT(*) FROM accounts")
+            total = cursor.fetchone()[0]
+            
+            conn.close()
+            return (total, all_accs)
+        except Exception as e:
+            print(f"[ERROR] Failed to get all accounts: {str(e)}")
+            return (0, [])

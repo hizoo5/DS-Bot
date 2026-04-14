@@ -1255,15 +1255,7 @@ def debug_database(message):
     
     try:
         # Get all accounts grouped by user and mode
-        all_accs = db.connection.execute("""
-            SELECT user_id, mode, COUNT(*) as count 
-            FROM accounts 
-            GROUP BY user_id, mode 
-            ORDER BY user_id
-        """).fetchall()
-        
-        # Get total count
-        total = db.connection.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        total, all_accs = db.get_all_accounts_by_user()
         
         debug_msg = f"🔧 <b>DATABASE DEBUG INFO</b>\n"
         debug_msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
