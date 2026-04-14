@@ -891,9 +891,9 @@ class RegistrationBot:
         if not self.register_account(mobile_10_digit, password, ref_code=recommender_id):
             return {"success": False, "error": "Registration failed"}
         
-        # Extract and format invite link
+        # Extract and format invite link (use site-specific URL)
         if self.userid:
-            results["invite_link"] = f"https://778gobb.shop/?pid={self.userid}"
+            results["invite_link"] = f"{self.website_url}/?pid={self.userid}"
             print(f"[✓] Invite link: {results['invite_link']}")
         
         # Get IP address
@@ -1241,9 +1241,6 @@ def send_welcome(message):
         markup.add(InlineKeyboardButton(f"{is_current}{display_name}", callback_data=f"select_site_{site}"))
     
     safe_send_message(chat_id, site_selector_text, reply_markup=markup, parse_mode="HTML")
-    
-    # Then show main menu after site selection
-    show_main_menu(chat_id, user_state[chat_id])
 
 @bot.message_handler(commands=['backup'])
 def show_backup(message):
@@ -1870,8 +1867,13 @@ def handle_callback(call):
                     print(f"[ERROR] Failed to save account: {e}")
                 
                 # Format output during generation (show D-Links for DUMMY)
+                site_display = get_site_display_name(selected_site)
+                mode_label = "MAIN" if mode == "MAIN" else "DUMMY"
+                
                 if mode == "MAIN":
                     output = (
+                        f"🌐 <b>{site_display}</b> | <b>{mode_label}</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"📱 Number   : <code>{result['username']}</code>\n"
                         f"🔑 Password  : <code>{result['password']}</code>\n"
                         f"🌐 IP Address : <code>{result['ip']}</code>\n"
@@ -1879,6 +1881,8 @@ def handle_callback(call):
                     )
                 else:  # DUMMY mode - show D-Links during generation
                     output = (
+                        f"🌐 <b>{site_display}</b> | <b>{mode_label}</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                         f"📱 Number: <code>{result['username']}</code>\n"
                         f"🔑 Password: <code>{result['password']}</code>\n"
                         f"🌐 IP: <code>{result['ip']}</code>\n"
