@@ -1404,7 +1404,7 @@ def show_main_accounts(message):
 
 @bot.message_handler(commands=['all_accounts'])
 def show_all_accounts(message):
-    """Show ALL accounts (MAIN + DUMMY) for current user"""
+    """Show ALL accounts (MAIN + DUMMY) for current user, grouped by site"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     
@@ -1415,7 +1415,6 @@ def show_all_accounts(message):
     
     # Get user's accounts from database
     all_accounts = db.get_user_accounts(user_id)
-    counts = db.get_user_account_count(user_id)
     
     if not all_accounts:
         safe_send_message(chat_id, "📭 No accounts yet.", parse_mode="HTML")
@@ -1423,25 +1422,37 @@ def show_all_accounts(message):
     
     text = f"📊 <b>YOUR ACCOUNTS</b>\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    text += f"👤 MAIN: {counts['main']}\n"
-    text += f"👥 DUMMY: {counts['dummy']}\n"
-    text += f"📊 Total: {counts['total']}\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    # Group by mode
-    main_accs = [a for a in all_accounts if a['mode'] == 'MAIN']
-    dummy_accs = [a for a in all_accounts if a['mode'] == 'DUMMY']
+    # Group by site
+    sites = {}
+    for acc in all_accounts:
+        site = acc.get('site', '788')
+        if site not in sites:
+            sites[site] = {'MAIN': [], 'DUMMY': []}
+        sites[site][acc['mode']].append(acc)
     
-    if main_accs:
-        text += "<b>🔴 MAIN ACCOUNTS:</b>\n"
-        for idx, acc in enumerate(main_accs, 1):
-            text += f"{idx}. 📱 <code>{acc['username']}</code>\n"
-        text += "\n"
-    
-    if dummy_accs:
-        text += "<b>🔵 DUMMY ACCOUNTS:</b>\n"
-        for idx, acc in enumerate(dummy_accs, 1):
-            text += f"{idx}. 📱 <code>{acc['username']}</code>\n"
+    # Display accounts grouped by site
+    for site_name in sorted(sites.keys()):
+        site_display = get_site_display_name(site_name)
+        text += f"\n🌐 <b>{site_display}</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        
+        main_count = len(sites[site_name]['MAIN'])
+        dummy_count = len(sites[site_name]['DUMMY'])
+        total_count = main_count + dummy_count
+        
+        text += f"👤 MAIN: {main_count} | 👥 DUMMY: {dummy_count} | 📊 Total: {total_count}\n\n"
+        
+        if main_count > 0:
+            text += "<b>🔴 MAIN ACCOUNTS:</b>\n"
+            for idx, acc in enumerate(sites[site_name]['MAIN'], 1):
+                text += f"{idx}. 📱 <code>{acc['username']}</code>\n"
+            text += "\n"
+        
+        if dummy_count > 0:
+            text += "<b>🔵 DUMMY ACCOUNTS:</b>\n"
+            for idx, acc in enumerate(sites[site_name]['DUMMY'], 1):
+                text += f"{idx}. 📱 <code>{acc['username']}</code>\n"
     
     safe_send_message(chat_id, text, parse_mode="HTML")
 
@@ -1467,7 +1478,7 @@ def show_account_detail(message):
     show_account_page(chat_id, user_id, all_accounts, page=0)
 
 def show_account_page(chat_id, user_id, all_accounts, page=0):
-    """Display a page of accounts with pagination"""
+    """Display a page of accounts with pagination, grouped by site"""
     accounts_per_page = 10
     total_pages = (len(all_accounts) + accounts_per_page - 1) // accounts_per_page
     
@@ -1478,8 +1489,17 @@ def show_account_page(chat_id, user_id, all_accounts, page=0):
     
     # Create buttons for account selection
     markup = InlineKeyboardMarkup()
+    current_site = None
     for idx, acc in enumerate(page_accounts, start + 1):
-        btn_text = f"{idx}. {acc['username']} ({acc['mode']})"
+        acc_site = acc.get('site', '788')
+        site_display = get_site_display_name(acc_site)
+        
+        # Add site separator if site changed
+        if current_site != acc_site:
+            current_site = acc_site
+            markup.add(InlineKeyboardButton(f"━ {site_display} ({acc['mode']}) ━", callback_data="noop"))
+        
+        btn_text = f"{idx}. {acc['username']}"
         markup.add(InlineKeyboardButton(btn_text, callback_data=f"detail_{acc['id']}"))
     
     # Add pagination buttons
@@ -1860,9 +1880,10 @@ def handle_callback(call):
                         username=result['username'],
                         password=result['password'],
                         mode=mode,
-                        proxy=result.get('ip', '')
+                        proxy=result.get('ip', ''),
+                        site=selected_site
                     )
-                    print(f"[✓] Account saved to database: {result['username']}")
+                    print(f"[✓] Account saved to database: {result['username']} (Site: {selected_site})")
                 except Exception as e:
                     print(f"[ERROR] Failed to save account: {e}")
                 
@@ -2047,12 +2068,15 @@ def handle_callback(call):
         account = db.get_account_detail(user_id, account_id)
         
         if account:
+            site_display = get_site_display_name(account.get('site', '788'))
             text = f"📱 <b>ACCOUNT DETAILS</b>\n"
+            text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            text += f"🌐 Site: <b>{site_display}</b>\n"
+            text += f"📌 Mode: <b>{account['mode']}</b>\n"
             text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             text += f"📱 Username: <code>{account['username']}</code>\n"
             text += f"🔑 Password: <code>{account['password']}</code>\n"
             text += f"📞 Phone: <code>{account['phone']}</code>\n"
-            text += f"📌 Mode: <b>{account['mode']}</b>\n"
             text += f"📅 Created: {account['created_at']}\n"
             text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             

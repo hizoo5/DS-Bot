@@ -38,6 +38,7 @@ class AccountDatabase:
                 password TEXT NOT NULL,
                 mode TEXT NOT NULL,
                 proxy TEXT,
+                site TEXT DEFAULT '788',
                 created_at TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(user_id),
                 UNIQUE(user_id, phone_number)
@@ -113,7 +114,7 @@ class AccountDatabase:
             return False
     
     def save_account(self, user_id: int, phone: str, username: str, password: str, 
-                     mode: str, proxy: str = None) -> bool:
+                     mode: str, proxy: str = None, site: str = "788") -> bool:
         """Save generated account to database"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -123,13 +124,13 @@ class AccountDatabase:
             self.add_user(user_id, f"user_{user_id}")
             
             cursor.execute('''
-                INSERT INTO accounts (user_id, phone_number, username, password, mode, proxy, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (user_id, phone, username, password, mode, proxy, datetime.now().isoformat()))
+                INSERT INTO accounts (user_id, phone_number, username, password, mode, proxy, site, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, phone, username, password, mode, proxy, site, datetime.now().isoformat()))
             
             conn.commit()
             conn.close()
-            print(f"[✓] Account saved for user {user_id}: {username}")
+            print(f"[✓] Account saved for user {user_id}: {username} (Site: {site})")
             return True
         except Exception as e:
             print(f"[ERROR] Failed to save account: {str(e)}")
@@ -143,14 +144,14 @@ class AccountDatabase:
             
             if mode:
                 cursor.execute('''
-                    SELECT id, phone_number, username, password, mode, created_at
+                    SELECT id, phone_number, username, password, mode, site, created_at
                     FROM accounts
                     WHERE user_id = ? AND mode = ?
                     ORDER BY created_at DESC
                 ''', (user_id, mode))
             else:
                 cursor.execute('''
-                    SELECT id, phone_number, username, password, mode, created_at
+                    SELECT id, phone_number, username, password, mode, site, created_at
                     FROM accounts
                     WHERE user_id = ?
                     ORDER BY created_at DESC
@@ -167,7 +168,8 @@ class AccountDatabase:
                     'username': row[2],
                     'password': row[3],
                     'mode': row[4],
-                    'created_at': row[5]
+                    'site': row[5] if row[5] else '788',
+                    'created_at': row[6]
                 })
             
             return accounts
@@ -189,7 +191,7 @@ class AccountDatabase:
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT id, phone_number, username, password, mode, created_at
+                SELECT id, phone_number, username, password, mode, site, created_at
                 FROM accounts
                 WHERE id = ? AND user_id = ?
             ''', (account_id, user_id))
@@ -204,7 +206,8 @@ class AccountDatabase:
                     'username': result[2],
                     'password': result[3],
                     'mode': result[4],
-                    'created_at': result[5]
+                    'site': result[5] if result[5] else '788',
+                    'created_at': result[6]
                 }
             return None
         except Exception as e:
