@@ -16,12 +16,13 @@ class AccountDatabase:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Users table - with whitelist
+        # Users table - with whitelist and site preference
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT UNIQUE,
                 is_authorized INTEGER DEFAULT 0,
+                site_preference TEXT DEFAULT '788',
                 created_at TEXT,
                 updated_at TEXT
             )
@@ -277,6 +278,42 @@ class AccountDatabase:
         except Exception as e:
             print(f"[ERROR] Failed to get all accounts: {str(e)}")
             return (0, [])
+    
+    def set_user_site_preference(self, user_id: int, site_name: str) -> bool:
+        """Set user's preferred site (788 or K67)"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                UPDATE users SET site_preference = ?, updated_at = ?
+                WHERE user_id = ?
+            ''', (site_name, datetime.now().isoformat(), user_id))
+            
+            conn.commit()
+            conn.close()
+            print(f"[✓] User {user_id} site preference set to {site_name}")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to set site preference: {str(e)}")
+            return False
+    
+    def get_user_site_preference(self, user_id: int) -> str:
+        """Get user's preferred site (default: 788)"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT site_preference FROM users WHERE user_id = ?', (user_id,))
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                return result[0] or "788"
+            return "788"  # Default to 788
+        except Exception as e:
+            print(f"[ERROR] Failed to get site preference: {str(e)}")
+            return "788"
     
     def export_all_to_json(self, filepath: str = "accounts_backup.json") -> bool:
         """Export all accounts to JSON backup file"""

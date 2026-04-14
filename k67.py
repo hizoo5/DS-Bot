@@ -23,7 +23,6 @@ from queue import Queue
 import hashlib
 import os
 from database import AccountDatabase
-from sites_config import get_site_config, get_all_sites, get_site_display_name
 from flask import Flask, request
 
 # Suppress SSL warnings globally
@@ -355,22 +354,13 @@ class LocalCaptchaSolver:
 
 
 class RegistrationBot:
-    def __init__(self, base_url: str, proxy_url: str, site_config: dict = None, cached_x_token: str = None):
+    def __init__(self, base_url: str, proxy_url: str, cached_x_token: str = None):
         self.base_url = base_url.rstrip('/')
-        
-        # Load site config (defaults to 788 if not provided)
-        if site_config is None:
-            site_config = get_site_config("788")
-        self.site_config = site_config
-        self.website_key = site_config.get("website_key")
-        self.website_url = site_config.get("website_url")
-        self.tenant_id = site_config.get("tenant_id")
-        
         # Use session pool instead of creating new session
         self.session = session_pool.get(timeout=2) or requests.Session()
         self.session.verify = False
         
-        self.turnstile_solver = TurnstileSolver(websitekey=self.website_key, proxy_url=proxy_url)
+        self.turnstile_solver = TurnstileSolver(proxy_url=proxy_url)
         self.session.proxies = {"http": proxy_url, "https": proxy_url}
         self.proxy_url = proxy_url
         
@@ -395,15 +385,15 @@ class RegistrationBot:
             "Accept-Language": "en-US,en;q=0.9",
             "Accept-Encoding": "gzip, deflate, br",
             "Content-Type": "application/json",
-            "Tenantid": self.tenant_id,
+            "Tenantid": TENANT_ID,
             "X-Trace-Id": self.trace_id,
             "X-Device-Type": "DesktopOS",
             "X-Device-Id": self.device_id,
             "Client-Language": "en-PH",
-            "X-Client-Version": self.site_config.get("x_client_version", "v234"),
+            "X-Client-Version": X_CLIENT_VERSION,
             "X-Request-Source": "web_client",
-            "Origin": self.website_url,
-            "Referer": f"{self.website_url}/",
+            "Origin": LOBBY_URL,
+            "Referer": f"{LOBBY_URL}/",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "cross-site"
@@ -429,8 +419,8 @@ class RegistrationBot:
                 headers = {
                     "Access-Control-Request-Method": "POST",
                     "Access-Control-Request-Headers": request_headers,
-                    "Origin": self.website_url,
-                    "Referer": f"{self.website_url}/",
+                    "Origin": LOBBY_URL,
+                    "Referer": f"{LOBBY_URL}/",
                     "User-Agent": self.user_agent,
                     "Accept": "*/*",
                     "Accept-Language": "en-US,en;q=0.9",
@@ -476,7 +466,7 @@ class RegistrationBot:
             
             # GET the lobby page
             print("[*] Fetching lobby page to solve Turnstile...")
-            res = self.session.get(self.website_url, timeout=10)
+            res = self.session.get(LOBBY_URL, timeout=10)
             
             if res.status_code != 200:
                 print(f"[!] Lobby page failed: {res.status_code}, using fallback")
@@ -485,7 +475,7 @@ class RegistrationBot:
             
             # Solve Turnstile
             print("[*] Solving Turnstile challenge...")
-            turnstile_token = self.turnstile_solver.solve(self.website_url)
+            turnstile_token = self.turnstile_solver.solve(LOBBY_URL)
             if not turnstile_token:
                 print("[!] Turnstile failed, using fallback token")
                 self.x_token = "0.er7a8FV8udYFV8udYFsh6XsoK_wFay3LjDe1SVeBwK3gptCS4wI1yfQ"
@@ -1011,21 +1001,14 @@ class RegistrationBot:
 
 
 # ==========================================
-# 2. TELEGRAM BOT C2 INTERFACE WITH MULTI-SITE SUPPORT
+# 2. TELEGRAM BOT C2 INTERFACE
 # ==========================================
 BOT_TOKEN = "8717189735:AAGqnwPoiexXduhAD0qUOUsjZ7oMkPel_bw"
-
-# Default site (can be changed per user)
-DEFAULT_SITE = "788"
-
-# Get default site config
-default_config = get_site_config(DEFAULT_SITE)
-TARGET_URL = default_config["api_domain"]
-LOBBY_URL = default_config["website_url"]
-LAUNCH_URL = default_config["launch_url"]
-TENANT_ID = default_config["tenant_id"]
-WEBSITE_KEY = default_config["website_key"]
-X_CLIENT_VERSION = default_config["x_client_version"]
+TARGET_URL = "https://api.n-t-v-w.com"
+LOBBY_URL = "https://778gobb.shop"  # Fixed: Use the actual domain, not the redirect
+LAUNCH_URL = "https://778gobb.shop/launch"
+TENANT_ID = "8446112"
+X_CLIENT_VERSION = "v234"
 
 # ==========================================
 # PROXY ROTATION POOL (Multiple sub-accounts)
@@ -1132,27 +1115,6 @@ def get_menu_markup():
     )
     return markup
 
-def show_main_menu(chat_id, state):
-    """Display main generator menu"""
-    text = (
-        "⚙️ <b>Username Generator</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 Site        : <b>{get_site_display_name(state['site'])}</b>\n"
-        f"🔀 Mode        : {state['mode']}\n"
-        f"🔢 Count       : {state['count']}\n"
-        "🔑 Passwords   : ✅ ON\n"
-        "🌐 IP Addresses: ✅ ON\n"
-        "📱 PH Mobile   : ✅ ON\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Tap a button to change settings.\n\n"
-        "<b>📁 COMMANDS:</b>\n"
-        "<i>/all_accounts - Show all\n"
-        "/account_detail - Full credentials\n"
-        "/start - Change site</i>"
-    )
-    
-    safe_send_message(chat_id, text, reply_markup=get_menu_markup(), parse_mode="HTML")
-
 def get_result_markup(current, target):
     markup = InlineKeyboardMarkup()
     buttons =[]
@@ -1213,12 +1175,8 @@ def send_welcome(message):
     # User is authorized, proceed
     db.add_user(user_id, username, is_authorized=True)
     
-    # GET user's site preference
-    user_site = db.get_user_site_preference(user_id)
-    
     user_state[chat_id] = {
         "user_id": user_id,
-        "site": user_site,
         "mode": "MAIN", 
         "ref_code": "", 
         "count": 1, 
@@ -1227,23 +1185,31 @@ def send_welcome(message):
         "results":[]
     }
     
-    # Show site selector first
-    site_selector_text = (
-        "🌐 <b>SELECT SITE</b>\n"
+    text = (
+        "⚙️ <b>Username Generator</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "Choose which site to use:\n"
+        f"🔀 Mode        : {user_state[chat_id]['mode']}\n"
+        f"🔢 Count       : {user_state[chat_id]['count']}\n"
+        "🔑 Passwords   : ✅ ON\n"
+        "🌐 IP Addresses: ✅ ON\n"
+        "📱 PH Mobile   : ✅ ON\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "Tap a button to change settings.\n\n"
+        "<b>📁 BACKUP COMMANDS:</b>\n"
+        "<i>/all_accounts - Show all (MAIN+DUMMY)\n"
+        "/main - All MAIN accounts\n"
+        "/account_detail - Full credentials\n"
+        "/backup - Backup summary\n"
+        "/export - Download as text file</i>"
     )
     
-    markup = InlineKeyboardMarkup()
-    for site in get_all_sites():
-        display_name = get_site_display_name(site)
-        is_current = "✅ " if site == user_site else ""
-        markup.add(InlineKeyboardButton(f"{is_current}{display_name}", callback_data=f"select_site_{site}"))
-    
-    safe_send_message(chat_id, site_selector_text, reply_markup=markup, parse_mode="HTML")
-    
-    # Then show main menu after site selection
-    show_main_menu(chat_id, user_state[chat_id])
+    # Retry logic for Telegram API
+    for retry_attempt in range(3):
+        try:
+            msg = bot.send_message(chat_id, text, reply_markup=get_menu_markup(), parse_mode="HTML")
+            user_state[chat_id]["menu_msg_id"] = msg.message_id
+            break
+        except Exception as e:
             print(f"[*] Telegram send_message retry {retry_attempt + 1}/3: {str(e)[:50]}")
             if retry_attempt < 2:
                 time.sleep(1)
@@ -1745,30 +1711,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id, "Session expired. Type /start")
         return
     
-    # HANDLE SITE SELECTION
-    if call.data.startswith("select_site_"):
-        site_name = call.data.split("select_site_")[1]
-        
-        # Save site preference to database
-        db.set_user_site_preference(user_id, site_name)
-        state["site"] = site_name
-        
-        # Update site config globals for this session
-        site_config = get_site_config(site_name)
-        
-        # Show confirmation
-        site_display = get_site_display_name(site_name)
-        bot.answer_callback_query(call.id, f"✅ Switched to {site_display}", show_alert=False)
-        
-        # Delete site selector message and show main menu
-        try:
-            bot.delete_message(chat_id, call.message.message_id)
-        except:
-            pass
-        
-        show_main_menu(chat_id, state)
-        return
-    
     # =================================================================
     # ABSOLUTE AUTHORIZATION CHECK - CANNOT BE BYPASSED
     # =================================================================
@@ -1838,15 +1780,7 @@ def handle_callback(call):
             proxy = get_next_proxy()
             print(f"[*] Creating bot instance for entry {state['current']} with fresh proxy...")
             print(f"[DEBUG] Proxy URL being used: {proxy}")
-            
-            # Get site config for user's selected site
-            selected_site = state.get("site", "788")
-            site_config = get_site_config(selected_site)
-            site_api_domain = site_config.get("api_domain")
-            
-            print(f"[DEBUG] Using site: {selected_site} | API: {site_api_domain}")
-            
-            registration_bot = RegistrationBot(base_url=site_api_domain, proxy_url=proxy, site_config=site_config)
+            registration_bot = RegistrationBot(base_url=TARGET_URL, proxy_url=proxy)
             
             mode = state.get("mode", "MAIN")
             
