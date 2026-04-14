@@ -33,6 +33,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ==========================================
 db = AccountDatabase("accounts.db")
 
+# Load from backup if database is empty
+total, _ = db.get_all_accounts_by_user()
+if total == 0 and os.path.exists("accounts_backup.json"):
+    print("[!] Database empty, loading from backup...")
+    db.load_from_json("accounts_backup.json")
+
 # Verified users tracker - ONLY updated when /key succeeds
 VERIFIED_USERS = set()
 
@@ -1894,6 +1900,14 @@ def handle_callback(call):
                     )
             
             summary += "💾 <b>All accounts stored in database!</b>"
+            
+            # Export backup and commit to GitHub
+            db.export_all_to_json("accounts_backup.json")
+            try:
+                os.system("cd . && git add accounts_backup.json && git commit -m 'AUTO: Backup accounts' && git push > /dev/null 2>&1 &")
+                print("[✓] Accounts backed up to GitHub")
+            except Exception as e:
+                print(f"[!] Failed to backup to GitHub: {e}")
             
             safe_send_message(chat_id, summary, parse_mode="HTML")
         else:

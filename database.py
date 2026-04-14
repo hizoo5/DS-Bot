@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import os
 from datetime import datetime
 from typing import List, Dict, Optional
 
@@ -276,3 +277,80 @@ class AccountDatabase:
         except Exception as e:
             print(f"[ERROR] Failed to get all accounts: {str(e)}")
             return (0, [])
+    
+    def export_all_to_json(self, filepath: str = "accounts_backup.json") -> bool:
+        """Export all accounts to JSON backup file"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT user_id, phone_number, username, password, mode, proxy, created_at
+                FROM accounts
+                ORDER BY user_id, created_at
+            ''')
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            accounts_data = []
+            for row in rows:
+                accounts_data.append({
+                    "user_id": row[0],
+                    "phone_number": row[1],
+                    "username": row[2],
+                    "password": row[3],
+                    "mode": row[4],
+                    "proxy": row[5],
+                    "created_at": row[6]
+                })
+            
+            with open(filepath, 'w') as f:
+                json.dump(accounts_data, f, indent=2)
+            
+            print(f"[✓] Exported {len(accounts_data)} accounts to {filepath}")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to export accounts: {str(e)}")
+            return False
+    
+    def load_from_json(self, filepath: str = "accounts_backup.json") -> bool:
+        """Load accounts from JSON backup file into database"""
+        try:
+            if not os.path.exists(filepath):
+                print(f"[!] No backup file found at {filepath}")
+                return False
+            
+            with open(filepath, 'r') as f:
+                accounts_data = json.load(f)
+            
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            for acc in accounts_data:
+                # Ensure user exists
+                self.add_user(acc['user_id'], f"user_{acc['user_id']}")
+                
+                # Insert account
+                cursor.execute('''
+                    INSERT OR IGNORE INTO accounts 
+                    (user_id, phone_number, username, password, mode, proxy, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    acc['user_id'],
+                    acc['phone_number'],
+                    acc['username'],
+                    acc['password'],
+                    acc['mode'],
+                    acc['proxy'],
+                    acc['created_at']
+                ))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"[✓] Loaded {len(accounts_data)} accounts from {filepath}")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to load accounts from JSON: {str(e)}")
+            return False
