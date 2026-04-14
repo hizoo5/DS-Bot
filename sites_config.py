@@ -15,6 +15,8 @@ SITES = {
         "lobby_url": "https://778gobb.shop",
         "launch_url": "https://778gobb.shop/launch",
         "x_client_version": "v234",
+        "deposit_channel_1": 1691,
+        "deposit_channel_2": 1692,
     },
     "K67": {
         "name": "K67",
@@ -26,6 +28,8 @@ SITES = {
         "lobby_url": "https://k677ee.live",
         "launch_url": "https://k677ee.live/launch",
         "x_client_version": "v234",
+        "deposit_channel_1": 1677,
+        "deposit_channel_2": 1678,
     }
 }
 

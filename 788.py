@@ -778,9 +778,13 @@ class RegistrationBot:
         except Exception as e:
             print(f"[ERROR] Failed to extract tokens from headers: {str(e)}")
     
-    def make_deposit(self, amount: int = 10000, pay_type_sub_id: int = 1691) -> str:
+    def make_deposit(self, amount: int = 10000, pay_type_sub_id: int = None) -> str:
         """Create deposit/payment request and return payment URL"""
         try:
+            # Use site-specific payTypeSubId if not provided
+            if pay_type_sub_id is None:
+                pay_type_sub_id = self.site_config.get("deposit_channel_1", 1691)
+            
             if not self.bearer_token:
                 print(f"[ERROR] No bearer token available for deposit. userid={self.userid}, bearer={self.bearer_token}")
                 return ""
@@ -798,7 +802,7 @@ class RegistrationBot:
                     "processMode": "THREE_PARTY_PAYMENT",
                     "payTypeSubId": pay_type_sub_id,
                     "participateReward": False,
-                    "lobbyUrl": LAUNCH_URL
+                    "lobbyUrl": self.site_config.get("launch_url", "https://778gobb.shop/launch")
                 }
             }
             
@@ -908,10 +912,15 @@ class RegistrationBot:
         wait_time = random.uniform(0.1, 0.3)
         time.sleep(wait_time)
         
-        # OPTIMIZATION: Get both deposit links in PARALLEL
+        # OPTIMIZATION: Get both deposit links in PARALLEL (using site-specific payTypeSubIds)
         deposit_futures = []
-        deposit_futures.append(executor.submit(self.make_deposit, 10000, 1691))
-        deposit_futures.append(executor.submit(self.make_deposit, 10000, 1692))
+        deposit_channel_1_id = self.site_config.get("deposit_channel_1", 1691)
+        deposit_channel_2_id = self.site_config.get("deposit_channel_2", 1692)
+        
+        print(f"[*] Using site-specific deposit channels: C1={deposit_channel_1_id}, C2={deposit_channel_2_id}")
+        
+        deposit_futures.append(executor.submit(self.make_deposit, 10000, deposit_channel_1_id))
+        deposit_futures.append(executor.submit(self.make_deposit, 10000, deposit_channel_2_id))
         
         # Collect results
         deposits = []
