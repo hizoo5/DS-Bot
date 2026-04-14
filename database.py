@@ -154,35 +154,66 @@ class AccountDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            if mode:
-                cursor.execute('''
-                    SELECT id, phone_number, username, password, mode, site, created_at
-                    FROM accounts
-                    WHERE user_id = ? AND mode = ?
-                    ORDER BY created_at DESC
-                ''', (user_id, mode))
-            else:
-                cursor.execute('''
-                    SELECT id, phone_number, username, password, mode, site, created_at
-                    FROM accounts
-                    WHERE user_id = ?
-                    ORDER BY created_at DESC
-                ''', (user_id,))
+            # Try to query with site column first
+            try:
+                if mode:
+                    cursor.execute('''
+                        SELECT id, phone_number, username, password, mode, site, created_at
+                        FROM accounts
+                        WHERE user_id = ? AND mode = ?
+                        ORDER BY created_at DESC
+                    ''', (user_id, mode))
+                else:
+                    cursor.execute('''
+                        SELECT id, phone_number, username, password, mode, site, created_at
+                        FROM accounts
+                        WHERE user_id = ?
+                        ORDER BY created_at DESC
+                    ''', (user_id,))
+            except Exception as site_error:
+                # Fallback: query without site column if it doesn't exist
+                print(f"[!] Site column query failed, trying fallback: {site_error}")
+                if mode:
+                    cursor.execute('''
+                        SELECT id, phone_number, username, password, mode, created_at
+                        FROM accounts
+                        WHERE user_id = ? AND mode = ?
+                        ORDER BY created_at DESC
+                    ''', (user_id, mode))
+                else:
+                    cursor.execute('''
+                        SELECT id, phone_number, username, password, mode, created_at
+                        FROM accounts
+                        WHERE user_id = ?
+                        ORDER BY created_at DESC
+                    ''', (user_id,))
             
             results = cursor.fetchall()
             conn.close()
             
             accounts = []
             for row in results:
-                accounts.append({
-                    'id': row[0],
-                    'phone': row[1],
-                    'username': row[2],
-                    'password': row[3],
-                    'mode': row[4],
-                    'site': row[5] if row[5] else '788',
-                    'created_at': row[6]
-                })
+                # Handle both query results (with and without site)
+                if len(row) == 7:  # Has site column
+                    accounts.append({
+                        'id': row[0],
+                        'phone': row[1],
+                        'username': row[2],
+                        'password': row[3],
+                        'mode': row[4],
+                        'site': row[5] if row[5] else '788',
+                        'created_at': row[6]
+                    })
+                else:  # No site column (fallback)
+                    accounts.append({
+                        'id': row[0],
+                        'phone': row[1],
+                        'username': row[2],
+                        'password': row[3],
+                        'mode': row[4],
+                        'site': '788',  # Default to 788
+                        'created_at': row[5]
+                    })
             
             return accounts
         except Exception as e:
@@ -202,25 +233,45 @@ class AccountDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute('''
-                SELECT id, phone_number, username, password, mode, site, created_at
-                FROM accounts
-                WHERE id = ? AND user_id = ?
-            ''', (account_id, user_id))
+            # Try with site column first
+            try:
+                cursor.execute('''
+                    SELECT id, phone_number, username, password, mode, site, created_at
+                    FROM accounts
+                    WHERE id = ? AND user_id = ?
+                ''', (account_id, user_id))
+            except:
+                # Fallback without site column
+                cursor.execute('''
+                    SELECT id, phone_number, username, password, mode, created_at
+                    FROM accounts
+                    WHERE id = ? AND user_id = ?
+                ''', (account_id, user_id))
             
             result = cursor.fetchone()
             conn.close()
             
             if result:
-                return {
-                    'id': result[0],
-                    'phone': result[1],
-                    'username': result[2],
-                    'password': result[3],
-                    'mode': result[4],
-                    'site': result[5] if result[5] else '788',
-                    'created_at': result[6]
-                }
+                if len(result) == 7:  # Has site column
+                    return {
+                        'id': result[0],
+                        'phone': result[1],
+                        'username': result[2],
+                        'password': result[3],
+                        'mode': result[4],
+                        'site': result[5] if result[5] else '788',
+                        'created_at': result[6]
+                    }
+                else:  # No site column (fallback)
+                    return {
+                        'id': result[0],
+                        'phone': result[1],
+                        'username': result[2],
+                        'password': result[3],
+                        'mode': result[4],
+                        'site': '788',  # Default to 788
+                        'created_at': result[5]
+                    }
             return None
         except Exception as e:
             print(f"[ERROR] Failed to get account detail: {str(e)}")
@@ -336,27 +387,50 @@ class AccountDatabase:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            cursor.execute('''
-                SELECT user_id, phone_number, username, password, mode, proxy, site, created_at
-                FROM accounts
-                ORDER BY user_id, created_at
-            ''')
+            # Try with site column first
+            try:
+                cursor.execute('''
+                    SELECT user_id, phone_number, username, password, mode, proxy, site, created_at
+                    FROM accounts
+                    ORDER BY user_id, created_at
+                ''')
+                has_site = True
+            except:
+                # Fallback without site column
+                cursor.execute('''
+                    SELECT user_id, phone_number, username, password, mode, proxy, created_at
+                    FROM accounts
+                    ORDER BY user_id, created_at
+                ''')
+                has_site = False
             
             rows = cursor.fetchall()
             conn.close()
             
             accounts_data = []
             for row in rows:
-                accounts_data.append({
-                    "user_id": row[0],
-                    "phone_number": row[1],
-                    "username": row[2],
-                    "password": row[3],
-                    "mode": row[4],
-                    "proxy": row[5],
-                    "site": row[6] if row[6] else '788',
-                    "created_at": row[7]
-                })
+                if has_site:
+                    accounts_data.append({
+                        "user_id": row[0],
+                        "phone_number": row[1],
+                        "username": row[2],
+                        "password": row[3],
+                        "mode": row[4],
+                        "proxy": row[5],
+                        "site": row[6] if row[6] else '788',
+                        "created_at": row[7]
+                    })
+                else:
+                    accounts_data.append({
+                        "user_id": row[0],
+                        "phone_number": row[1],
+                        "username": row[2],
+                        "password": row[3],
+                        "mode": row[4],
+                        "proxy": row[5],
+                        "site": '788',
+                        "created_at": row[6]
+                    })
             
             with open(filepath, 'w') as f:
                 json.dump(accounts_data, f, indent=2)
