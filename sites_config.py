@@ -30,6 +30,19 @@ SITES = {
         "x_client_version": "v234",
         "deposit_channel_1": 1677,
         "deposit_channel_2": 1678,
+    },
+    "G877": {
+        "name": "G877",
+        "display_name": "🎪 Site G877",
+        "api_domain": "https://api.n-t-v-w.com",
+        "website_url": "https://g877.cyou",
+        "website_key": "0x4AAAAAAB0oRY23FyZnllMo",  # Turnstile key (same as others)
+        "tenant_id": "7753651",
+        "lobby_url": "https://g877.cyou",
+        "launch_url": "https://g877.cyou/launch",
+        "x_client_version": "v234",
+        "deposit_channel_1": 1775,
+        "deposit_channel_2": 1776,
     }
 }
 
